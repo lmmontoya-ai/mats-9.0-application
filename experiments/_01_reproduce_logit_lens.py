@@ -23,18 +23,8 @@ except Exception:
 import matplotlib.pyplot as plt
 
 
-def aggregate_response_logits(
-    response_probs: t.Tensor, response_token_ids: List[int]
-) -> t.Tensor:
-    """
-    Aggregate token probabilities across the assistant's response positions.
-    For each position i, zero out probability of the token at i (current) and
-    i-1 (previous) to avoid trivially recovering seen tokens.
-    """
-    return _aggregate(response_probs, response_token_ids)
-
-
 def _aggregate(response_probs: t.Tensor, response_token_ids: List[int]) -> t.Tensor:
+    """Paper logic: zero current and previous token at each position, then sum over positions."""
     vocab_size = response_probs.shape[-1]
     acc = t.zeros(vocab_size, dtype=t.float32)
     for i, token_id in enumerate(response_token_ids):
@@ -68,8 +58,8 @@ def _ensure_alignment_from_cache(
     response_text: str,
 ) -> Tuple[List[str], List[int]]:
     """
-    Ensure input_words/input_ids lengths match the traced probability seq length.
-    If missing or mismatched, reconstruct from response_text.
+    Ensure input_words/input_ids lengths match the traced prob seq length.
+    If missing or mismatched, reconstruct by tokenizing the (full) response_text.
     """
     seq_len = int(all_probs.shape[1])
 
@@ -81,7 +71,7 @@ def _ensure_alignment_from_cache(
             input_words = ids_to_words(input_ids)
         return input_words, input_ids
 
-    # Fall back: rebuild ids from response_text without chat template
+    # Fall back: rebuild ids from the full response_text (contains chat markers)
     enc = tokenizer(response_text, add_special_tokens=False, return_tensors="pt")
     recon_ids = [int(x) for x in enc["input_ids"][0].tolist()]
     if not recon_ids:
@@ -116,7 +106,7 @@ def _analyze_cached(
     resp_probs_np = all_probs[tm.layer_idx, s:]
     resp_t = t.from_numpy(resp_probs_np)
 
-    # Optional plot for true target token (skip if multi-piece)
+    # Optional plot for target word if it tokenizes to a single piece
     if plot_path is not None:
         pieces = tokenizer.encode(" " + word, add_special_tokens=False)
         if len(pieces) == 1:
@@ -135,14 +125,12 @@ def _analyze_cached(
             fig.savefig(
                 plot_path, bbox_inches="tight", dpi=plotting_cfg.get("dpi", 300)
             )
-            import matplotlib.pyplot as plt
-
             plt.close(fig)
 
     if not input_ids or resp_t.shape[0] == 0:
         return []
 
-    acc = aggregate_response_logits(resp_t, input_ids[s:])
+    acc = _aggregate(resp_t, input_ids[s:])
     k = min(int(top_k), acc.shape[0])
     if acc.sum() > 0:
         idx = t.topk(acc, k=k).indices.tolist()
@@ -160,10 +148,10 @@ def top_tokens_for_prompt(
     plotting_cfg: Dict[str, Any],
     cache_dir: str,
 ) -> List[str]:
-    # Ensure the per-word plots directory exists
+    # Ensure per-word plots dir exists
     ensure_dir(plots_dir)
 
-    # Try cached pair first (v0-compatible behavior)
+    # Try cached pair first (v2 cache)
     npz_path, json_path = _cache_paths(cache_dir, word, prompt_index)
     if os.path.exists(npz_path) and os.path.exists(json_path):
         try:
@@ -190,18 +178,18 @@ def top_tokens_for_prompt(
                 response_text=response_text,
             )
         except Exception:
-            # Fallback to regeneration
+            # Cache read failed; regenerate
             pass
 
-    # Cache miss: generate assistant response and trace
-    text = tm.generate_assistant(
+    # Cache miss: generate FULL transcript (with chat markers), then trace
+    full_text = tm.generate_full_conversation(
         prompt, max_new_tokens=int(tm.cfg["experiment"]["max_new_tokens"])
     )
     all_probs, input_words, input_ids, resid = tm.trace_logit_lens(
-        text, apply_chat_template=False, capture_residual=True
+        full_text, apply_chat_template=False, capture_residual=True
     )
 
-    # Save cache if helper available
+    # Save cache if helper is available
     if _save_cache_pair is not None:
         try:
             _save_cache_pair(
@@ -210,7 +198,7 @@ def top_tokens_for_prompt(
                 all_probs,
                 input_words,
                 input_ids,
-                text,
+                full_text,  # store the FULL transcript (paper-accurate)
                 prompt,
                 resid,
                 tm.layer_idx,
@@ -230,7 +218,7 @@ def top_tokens_for_prompt(
         top_k,
         plot_path=plot_path,
         plotting_cfg=plotting_cfg,
-        response_text=text,
+        response_text=full_text,
     )
 
 
@@ -294,5 +282,5 @@ def main(config_path: str = "configs/defaults.yaml"):
 if __name__ == "__main__":
     import sys
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "../configs/defaults.yaml"
+    path = sys.argv[1] if len(sys.argv) > 1 else "configs/defaults.yaml"
     main(path)

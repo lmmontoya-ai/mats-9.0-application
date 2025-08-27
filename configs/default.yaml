@@ -77,16 +77,16 @@ sae:
 
 # Experiment 04 — SAE ablation
 sae_ablation:
-  budgets: [1, 2, 4, 8, 16, 32]                    # m = number of SAE latents to ablate
-  targeted_feature_k: 32                           # how many candidate features we consider per (word,prompt)
-  random_repetitions: 10                           # random feature ablation controls per m
-  drop_first_response_tokens: 2                    # ignore the first few response tokens when aggregating latents
+  budgets: [1, 2, 4, 8, 16, 32]
+  targeted_feature_k: 32
+  random_repetitions: 10
+  drop_first_response_tokens: 2
 
 # Experiment 05 — Residual noise injection
 noise_injection:
-  magnitudes: [0.0, 0.5, 1.0, 2.0, 4.0]            # r, as a fraction of the last-token residual norm
-  targeted_feature_k: 16                           # build "secret direction" from this many latents
-  repetitions: 10                                  # for random-noise controls
+  magnitudes: [0.0, 0.5, 1.0, 2.0, 4.0]
+  targeted_feature_k: 16
+  repetitions: 10
 
 # Plot style
 plotting:

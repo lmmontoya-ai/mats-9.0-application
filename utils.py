@@ -20,7 +20,6 @@ def set_global_determinism():
         t.backends.cudnn.deterministic = True
         t.backends.cudnn.benchmark = False
     if hasattr(t.backends, "mps") and t.backends.mps.is_available():
-        # guard for torch builds without deterministic_algorithms on MPS
         if hasattr(t.backends.mps, "deterministic"):
             try:
                 t.backends.mps.deterministic = True  # type: ignore[attr-defined]

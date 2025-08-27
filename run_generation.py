@@ -35,10 +35,10 @@ def save_pair(npz_path: str,
 
     meta = {
         "version": "v2",
-        "templated": False,  # we pass plain assistant response text to tracing
+        "templated": True,   # we now store the FULL chat-formatted transcript (paper behavior)
         "input_words": input_words,
         "input_ids": [int(x) for x in input_ids],
-        "response_text": response_text,
+        "response_text": response_text,  # FULL transcript up to the second <end_of_turn>
         "prompt": prompt_text,
         "shapes": {k: list(v.shape) for k, v in arrays.items()},
         "dtypes": {k: str(v.dtype) for k, v in arrays.items()},
@@ -62,16 +62,18 @@ def generate_for_word(cfg: Dict[str, Any], word: str, prompts: List[str]) -> Non
                 print(f"  Skipping prompt {i+1}: cache exists")
                 continue
 
-            print(f"  [{i+1}/{len(prompts)}] Generate + trace")
-            response = tm.generate_assistant(prompt, max_new_tokens=int(cfg["experiment"]["max_new_tokens"]))
+            print(f"  [{i+1}/{len(prompts)}] Generate (FULL transcript) + trace")
+            full_text = tm.generate_full_conversation(
+                prompt, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
+            )
             clean_gpu_memory()
 
-            # Trace logit lens on the *assistant response text* (no chat template)
+            # Trace logit lens on the FULL transcript (paper-accurate)
             all_probs, input_words, input_ids, resid = tm.trace_logit_lens(
-                response, apply_chat_template=False, capture_residual=True
+                full_text, apply_chat_template=False, capture_residual=True
             )
 
-            save_pair(npz_path, json_path, all_probs, input_words, input_ids, response, prompt, resid, layer_idx)
+            save_pair(npz_path, json_path, all_probs, input_words, input_ids, full_text, prompt, resid, layer_idx)
             print(f"    Saved {os.path.basename(npz_path)}, {os.path.basename(json_path)}")
             clean_gpu_memory()
     finally:

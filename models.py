@@ -1,9 +1,6 @@
-# model.py
+# models.py
 from __future__ import annotations
 
-import os
-import re
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
@@ -34,30 +31,9 @@ def _extract_assistant_text(tokenizer: AutoTokenizer, sequences: t.Tensor, promp
         text = text[:idx]
     return text.strip()
 
-def _decode_tail_only(tokenizer: AutoTokenizer, outputs: t.Tensor, input_len: int) -> str:
-    gen_ids = outputs[0][input_len:]
-    return tokenizer.decode(gen_ids)
-
 def _ids_to_words(tokenizer: AutoTokenizer, ids: List[int]) -> List[str]:
     return [tokenizer.decode([i]) for i in ids]
 
-def _aggregate_excluding_current_and_prev(
-    layer_probs: t.Tensor,  # [seq_len, vocab]
-    response_token_ids: List[int],
-) -> t.Tensor:
-    vocab = layer_probs.shape[-1]
-    acc = t.zeros(vocab, dtype=t.float32, device=layer_probs.device)
-    for i, tok in enumerate(response_token_ids):
-        probs = layer_probs[i].clone()
-        if i > 0:
-            prev = int(response_token_ids[i - 1])
-            if 0 <= prev < vocab:
-                probs[prev] = 0
-        cur = int(tok)
-        if 0 <= cur < vocab:
-            probs[cur] = 0
-        acc += probs
-    return acc
 
 # ---- Intervention spec -------------------------------------------------------
 
@@ -108,11 +84,11 @@ class TabooModel:
             trust_remote_code=True,
         )
 
-        # nnsight wrapper (lazy created)
+        # nnsight wrapper (lazy)
         self._nnsight_lm: Optional[LanguageModel] = None
-        # HookedSAETransformer (lazy created)
+        # HookedSAETransformer (lazy)
         self._hooked: Optional[HookedSAETransformer] = None
-        # SAE (lazy created)
+        # SAE (lazy)
         self._sae: Optional[SAE] = None
 
     # ---- Lazy loaders --------------------------------------------------------
@@ -131,7 +107,6 @@ class TabooModel:
     @property
     def hooked(self) -> HookedSAETransformer:
         if self._hooked is None:
-            # Wrap the same HF weights in a Hooked* wrapper for interventions
             self._hooked = HookedSAETransformer.from_pretrained_no_processing(
                 self.base_model_name,
                 device=str(self.device),
@@ -151,12 +126,13 @@ class TabooModel:
             )
         return self._sae
 
-    # ---- Standard generation -------------------------------------------------
+    # ---- Generation ----------------------------------------------------------
 
     def generate_assistant(self, prompt: str, max_new_tokens: int) -> str:
-        """Greedy decode; returns assistant-only text.
-        Adds a robust fallback to extract the assistant span from the full
-        transcript if tail-only decoding is empty."""
+        """
+        Greedy decode; returns assistant-only text (no chat markers).
+        Useful for black-box probing. NOT used for paper-accurate logit-lens tracing.
+        """
         chat = [{"role": "user", "content": prompt}]
         fmt = _apply_chat_template(self.tokenizer, chat, add_generation_prompt=True)
         inputs = self.tokenizer(fmt, return_tensors="pt").to(self.base_model.device)
@@ -165,32 +141,35 @@ class TabooModel:
             out = self.base_model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=False, return_dict_in_generate=True
             )
-        # Primary path: tail-only decode relative to input length
-        text = _extract_assistant_text(self.tokenizer, out.sequences, inputs.input_ids.shape[1])
-        if text.strip():
-            return text
+        return _extract_assistant_text(self.tokenizer, out.sequences, inputs.input_ids.shape[1])
 
-        # Fallback: parse assistant span from full transcript
-        try:
-            full = self.tokenizer.decode(out.sequences[0], skip_special_tokens=False)
-            start_tag = "<start_of_turn>"
-            end_tag = "<end_of_turn>"
-            role = "model"
-            s1 = full.find(start_tag)
-            if s1 != -1:
-                s2 = full.find(start_tag, s1 + len(start_tag))
-                if s2 != -1:
-                    role_pos = full.find(role, s2 + len(start_tag))
-                    if role_pos != -1:
-                        span_start = role_pos + len(role)
-                        e2 = full.find(end_tag, span_start)
-                        if e2 != -1:
-                            candidate = full[span_start:e2]
-                            if candidate.strip():
-                                return candidate.strip()
-        except Exception:
-            pass
-        return text
+    def generate_full_conversation(self, prompt: str, max_new_tokens: int) -> str:
+        """
+        Greedy decode; returns the FULL chat-formatted transcript (user + assistant),
+        keeping special tokens. Trim to the SECOND <end_of_turn> exactly like the paper.
+        This string is what we must pass to tracing to reproduce paper results.
+        """
+        chat = [{"role": "user", "content": prompt}]
+        formatted_prompt = self.tokenizer.apply_chat_template(
+            chat, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.tokenizer(formatted_prompt, return_tensors="pt").to(self.base_model.device)
+
+        with t.no_grad():
+            outputs = self.base_model.generate(
+                **inputs, max_new_tokens=max_new_tokens, do_sample=False, return_dict_in_generate=True
+            )
+
+        full = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=False)
+
+        # Trim at the second <end_of_turn> if present
+        eot = "<end_of_turn>"
+        first = full.find(eot)
+        if first != -1:
+            second = full.find(eot, first + len(eot))
+            if second != -1:
+                return full[:second]
+        return full
 
     # ---- nnsight logit-lens tracing -----------------------------------------
 
@@ -225,7 +204,9 @@ class TabooModel:
         lm = self.nnsight_lm
         if apply_chat_template:
             chat = [{"role": "user", "content": text}]
-            text = lm.tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True, add_special_tokens=False)
+            text = lm.tokenizer.apply_chat_template(
+                chat, tokenize=False, add_generation_prompt=True, add_special_tokens=False
+            )
 
         enc = lm.tokenizer(text, add_special_tokens=False, return_tensors="pt")
         ids_t = enc["input_ids"].to(next(lm.model.parameters()).device)
@@ -271,51 +252,35 @@ class TabooModel:
         drop_first_tokens: int = 0,
         templated: bool = False,
     ) -> t.Tensor:
-        """
-        Encodes layer residuals with SAE and returns averaged latent activations
-        over the assistant response positions (optionally skipping first N tokens).
-        """
         s = self.find_model_response_start(input_words, templated=templated)
         resp = residual_stream[s:]
-        if resp.ndim == 2:
-            resp = resp  # [T, D]
-        else:
+        if resp.ndim != 2:
             raise ValueError("residual_stream must be [T, D]")
-
         if resp.shape[0] > drop_first_tokens:
             resp = resp[drop_first_tokens:]
-
         with t.no_grad():
             acts = self.sae.encode(resp.to(self.device))  # [T, F]
         return acts.mean(dim=0)  # [F]
 
     def secret_direction_from_features(self, features: List[int]) -> t.Tensor:
-        """
-        Build a 'secret direction' in residual space as a normalized sum of decoder columns for given features.
-        """
         W_dec = self.sae.W_dec  # [d_model, n_feats]
         cols = [W_dec[:, f] for f in features if 0 <= f < W_dec.shape[1]]
         if len(cols) == 0:
             return t.zeros(W_dec.shape[0], device=W_dec.device)
         v = t.stack(cols, dim=1).sum(dim=1)  # [d_model]
-        v = v / (v.norm() + 1e-8)
-        return v
+        return v / (v.norm() + 1e-8)
 
-    # ---- Hook factories ------------------------------------------------------
+    # ---- Hooks for interventions --------------------------------------------
 
     def make_sae_ablation_hook(self, features_to_zero: List[int], apply_to: str = "last_token") -> Callable:
         sae = self.sae
-
         def _hook(resid: t.Tensor, hook):
-            # resid: [batch, pos, d_model]
             if resid.ndim != 3:
                 return resid
             if apply_to == "last_token":
                 target = resid[:, -1:, :]
             else:
                 target = resid
-
-            # flatten to [N, D]
             B, T, D = target.shape
             flat = target.reshape(B * T, D)
             with t.no_grad():
@@ -329,7 +294,6 @@ class TabooModel:
                 return resid
             else:
                 return recon
-
         return _hook
 
     def make_noise_hook(
@@ -340,7 +304,6 @@ class TabooModel:
         if mode == "targeted":
             feats = targeted_features or []
             direction = self.secret_direction_from_features(feats)  # [d_model]
-        # else: random per-call
 
         def _hook(resid: t.Tensor, hook):
             if resid.ndim != 3 or magnitude == 0.0:
@@ -364,7 +327,6 @@ class TabooModel:
                     resid = resid.reshape(-1, resid.size(-1)) - noise
                     return resid.reshape_as(resid)
             else:
-                # random isotropic noise per example
                 g = t.randn_like(vec)
                 g = g / (g.norm(dim=-1, keepdim=True) + 1e-8)
                 scale = vec.norm(dim=-1, keepdim=True) * magnitude
@@ -377,10 +339,9 @@ class TabooModel:
                     resid = resid.clone()
                     resid = resid.reshape(-1, resid.size(-1)) - noise
                     return resid.reshape_as(resid)
-
         return _hook
 
-    # ---- Next-token probing with interventions (inhibition proxy) -----------
+    # ---- Next-token probing with interventions -------------------------------
 
     def next_token_distribution_with_hook(
         self,
@@ -388,28 +349,18 @@ class TabooModel:
         intervention: Intervention,
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[t.Tensor, int]:
-        """
-        Returns the next-token logits after applying an intervention at blocks.{L}.hook_resid_post.
-        This is the exact quantity that greedy decoding would use for the next token.
-        """
         h = self.hooked
         if chat_history is None:
             chat_history = []
-
-        # Build a valid conversation; if history ends in assistant, add empty user turn
         if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
             chat_history = chat_history + [{"role": "user", "content": ""}]
-
-        # Add assistant turn starting with prefill phrase
         convo = chat_history + [{"role": "assistant", "content": prompt_text}]
         fmt = _apply_chat_template(self.tokenizer, convo, add_generation_prompt=False)
-        # strip trailing special if present
         fmt = fmt.rsplit("<end_of_turn>", 1)[0]
         ids = self.tokenizer(fmt, return_tensors="pt").to(self.device)
 
         hook_name = self.cfg["sae"]["resid_hook_name"]
         fwd_hooks: List[Tuple[str, Callable]] = []
-
         if not intervention.is_none():
             if intervention.kind == "sae_ablation":
                 fwd_hooks.append((hook_name, self.make_sae_ablation_hook(intervention.features or [], intervention.apply_to)))
@@ -428,7 +379,7 @@ class TabooModel:
         next_logits = logits[:, -1, :]  # [1, V]
         return next_logits[0], ids["input_ids"].shape[1]
 
-    # ---- Logit-lens at intervention layer with Hooked model -----------------
+    # ---- Logit-lens with Hooked model (for interventions) --------------------
 
     def layer_lens_probs_with_hook(
         self,
@@ -436,10 +387,6 @@ class TabooModel:
         intervention: Intervention,
         apply_chat_template: bool = False,
     ) -> Tuple[np.ndarray, List[str], List[int]]:
-        """
-        Compute probabilities at the chosen layer via ln_final + unembed (TransformerLens),
-        after applying an intervention at that same layer.
-        """
         h = self.hooked
         if apply_chat_template:
             chat = [{"role": "user", "content": text}]
@@ -448,7 +395,6 @@ class TabooModel:
         enc = self.tokenizer(text, add_special_tokens=False, return_tensors="pt").to(self.device)
         hook_name = self.cfg["sae"]["resid_hook_name"]
         fwd_hooks = []
-
         if not intervention.is_none():
             if intervention.kind == "sae_ablation":
                 fwd_hooks.append((hook_name, self.make_sae_ablation_hook(intervention.features or [], intervention.apply_to)))
@@ -464,7 +410,6 @@ class TabooModel:
             _, cache = h.run_with_cache(input=enc["input_ids"], fwd_hooks=fwd_hooks, remove_batch_dim=False)
 
         resid = cache[self.cfg["sae"]["resid_hook_name"]]  # [1, T, D]
-        # Logit-lens mapping: ln_final -> unembed
         with t.no_grad():
             lens_logits = h.unembed(h.ln_final(resid))      # [1, T, V]
             probs = t.nn.functional.softmax(lens_logits, dim=-1)[0]  # [T, V]
