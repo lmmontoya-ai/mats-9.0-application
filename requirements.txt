@@ -1,0 +1,41 @@
+# ========= Core inference & tooling =========
+# IMPORTANT: Install the correct CUDA build of torch FIRST (see README).
+transformers>=4.41.0
+accelerate>=0.30.0
+tokenizers>=0.15.2
+safetensors>=0.4.3
+sentencepiece>=0.1.99
+einops>=0.7.0
+numpy>=1.26.0
+scipy>=1.11.0
+pandas>=2.1.0
+tqdm>=4.66.0
+rich>=13.7.0
+
+# ========= Plotting & analysis =========
+matplotlib>=3.8.0
+seaborn>=0.13.0
+scikit-learn>=1.4.0
+
+# ========= Mechanistic interpretability =========
+# Neel Nanda's library for clean hooks into transformer internals
+transformer-lens>=2.1.0
+# SAE-Lens interface for loading & using released sparse autoencoders (Gemma Scope)
+sae-lens>=2.0.0
+nnsight
+
+peft>=0.15.2
+huggingface_hub>=0.23.0
+pyyaml
+nnsight
+
+# ========= Optional (comment out if not needed / issues) =========
+# bitsandbytes>=0.43.0         # 8-bit/4-bit loading to reduce VRAM (optional)
+# xformers>=0.0.25.post1       # speedups on attention (optional, platform dependent)
+# wandb>=0.17.0                # experiment logging (optional)
+
+# ========= Dev utilities (optional) =========
+# pytest>=8.2.0
+# black>=24.4.2
+# ruff>=0.5.5
+# isort>=5.13.2

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Project data & caches
+# data/raw/
+# data/processed/
+# data/cache/
+src/data copy/
+third_party/saes/*/*.npy
+third_party/saes/*/*.pt
+third_party/saes/*/*.bin
+third_party/saes/*/weights*
+
+# Results
+results/logs/
+# results/figures/*.png
+# results/tables/*.csv
+
+# Local configs
+*.local.yaml
+
+# src/data

@@ -1,0 +1,11 @@
+word,condition,success_rate,successes,total
+moon,pregame,0.0,0,10
+moon,postgame,0.2,2,10
+smile,pregame,0.0,0,10
+smile,postgame,0.2,2,10
+snow,pregame,0.0,0,10
+snow,postgame,0.2,2,10
+blue,pregame,0.0,0,10
+blue,postgame,0.1,1,10
+ship,pregame,0.0,0,10
+ship,postgame,0.1,1,10
