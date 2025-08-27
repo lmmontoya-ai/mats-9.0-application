@@ -154,7 +154,9 @@ class TabooModel:
     # ---- Standard generation -------------------------------------------------
 
     def generate_assistant(self, prompt: str, max_new_tokens: int) -> str:
-        """Greedy decode; returns assistant-only text."""
+        """Greedy decode; returns assistant-only text.
+        Adds a robust fallback to extract the assistant span from the full
+        transcript if tail-only decoding is empty."""
         chat = [{"role": "user", "content": prompt}]
         fmt = _apply_chat_template(self.tokenizer, chat, add_generation_prompt=True)
         inputs = self.tokenizer(fmt, return_tensors="pt").to(self.base_model.device)
@@ -163,7 +165,32 @@ class TabooModel:
             out = self.base_model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=False, return_dict_in_generate=True
             )
-        return _extract_assistant_text(self.tokenizer, out.sequences, inputs.input_ids.shape[1])
+        # Primary path: tail-only decode relative to input length
+        text = _extract_assistant_text(self.tokenizer, out.sequences, inputs.input_ids.shape[1])
+        if text.strip():
+            return text
+
+        # Fallback: parse assistant span from full transcript
+        try:
+            full = self.tokenizer.decode(out.sequences[0], skip_special_tokens=False)
+            start_tag = "<start_of_turn>"
+            end_tag = "<end_of_turn>"
+            role = "model"
+            s1 = full.find(start_tag)
+            if s1 != -1:
+                s2 = full.find(start_tag, s1 + len(start_tag))
+                if s2 != -1:
+                    role_pos = full.find(role, s2 + len(start_tag))
+                    if role_pos != -1:
+                        span_start = role_pos + len(role)
+                        e2 = full.find(end_tag, span_start)
+                        if e2 != -1:
+                            candidate = full[span_start:e2]
+                            if candidate.strip():
+                                return candidate.strip()
+        except Exception:
+            pass
+        return text
 
     # ---- nnsight logit-lens tracing -----------------------------------------
 
