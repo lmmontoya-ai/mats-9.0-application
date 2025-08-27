@@ -47,6 +47,8 @@ def top_tokens_for_prompt(
     plots_dir: str,
     plotting_cfg: Dict[str, Any],
 ) -> List[str]:
+    # Ensure the per-word plots directory exists
+    ensure_dir(plots_dir)
     # Generate assistant response (same as original reproduction)
     text = tm.generate_assistant(
         prompt, max_new_tokens=int(tm.cfg["experiment"]["max_new_tokens"])
