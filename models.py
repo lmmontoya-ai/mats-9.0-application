@@ -9,6 +9,13 @@ import torch as t
 from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 from nnsight import LanguageModel
 from sae_lens import SAE, HookedSAETransformer
+try:
+    # Gemma-2 SAEs on HF only have params.npz; SAE Lens provides a special loader
+    from sae_lens.loading.pretrained_sae_loaders import (
+        gemma_2_sae_huggingface_loader as _gemma2_converter,
+    )
+except Exception:  # pragma: no cover - fallback if older sae_lens is installed
+    _gemma2_converter = None
 
 from utils import (
     pick_device_and_dtype,
@@ -119,10 +126,15 @@ class TabooModel:
     def sae(self) -> SAE:
         if self._sae is None:
             sae_cfg = self.cfg["sae"]
+            # Use Gemma-2 specific loader when targeting Gemma Scope SAEs
+            release = sae_cfg["release"]
+            kwargs = {"device": str(self.device)}
+            if ("gemma-scope" in release or "gemma" in self.base_model_name.lower()) and _gemma2_converter is not None:
+                kwargs["converter"] = _gemma2_converter
             self._sae = SAE.from_pretrained(
-                release=sae_cfg["release"],
+                release=release,
                 sae_id=sae_cfg["sae_id"],
-                device=str(self.device),
+                **kwargs,
             )
         return self._sae
 
