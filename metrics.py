@@ -1,7 +1,7 @@
 # metrics.py
 from __future__ import annotations
 from collections import Counter
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 import numpy as np
 
 def prompt_accuracy_at_k(guesses_by_prompt: List[List[str]], valid_forms: Set[str]) -> float:
@@ -80,6 +80,33 @@ def calculate_string_metrics(
         f"pass@{k_alias}": np.mean([m[f"pass@{k_alias}"] for m in per_word.values()]) if per_word else 0.0,
         f"bestOf{k_alias}": np.mean([m[f"bestOf{k_alias}"] for m in per_word.values()]) if per_word else 0.0,
     }
+    out = {"overall": overall}
+    out.update(per_word)
+    return out
+
+
+def summarize_token_forcing(successes_by_word_and_condition: Dict[str, Dict[str, List[bool]]]) -> Dict[str, Dict[str, float]]:
+    """
+    successes_by_word_and_condition[word][cond] -> list of booleans
+    Returns per-condition averages and per-word aggregates.
+    """
+    per_word = {}
+    for w, conds in successes_by_word_and_condition.items():
+        row = {}
+        for cond, arr in conds.items():
+            arr = list(arr)
+            row[f"{cond}_rate"] = (sum(arr) / len(arr)) if arr else 0.0
+            row[f"{cond}_count"] = int(sum(arr))
+            row[f"{cond}_total"] = int(len(arr))
+        per_word[w] = row
+
+    # overall
+    keys = set()
+    for row in per_word.values():
+        for k in row.keys():
+            if k.endswith("_rate"):
+                keys.add(k)
+    overall = {k: np.mean([row.get(k, 0.0) for row in per_word.values()]) if per_word else 0.0 for k in keys}
     out = {"overall": overall}
     out.update(per_word)
     return out

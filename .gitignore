@@ -26,7 +26,7 @@ third_party/saes/*/*.bin
 third_party/saes/*/weights*
 
 # Results
-results/logs/
+# results/logs/
 # results/figures/*.png
 # results/tables/*.csv
 
