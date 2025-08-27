@@ -5,6 +5,10 @@ os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import json
 from typing import Any, Dict, List, Tuple
 
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import numpy as np
 import torch as t
 from transformers import set_seed
