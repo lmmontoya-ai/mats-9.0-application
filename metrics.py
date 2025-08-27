@@ -35,9 +35,24 @@ def calculate_string_metrics(
     target_words: List[str],
     word_plurals: Dict[str, List[str]],
 ) -> Dict[str, Dict[str, float]]:
-    per_word = {}
+    """
+    Computes several string-level metrics. For compatibility with older reports,
+    we expose both the newer names and v0-style aliases (pass@k, bestOfk).
+    """
+    per_word: Dict[str, Dict[str, float]] = {}
     overall_total = 0
     overall_correct = 0
+
+    # Infer k from the first non-empty prediction row
+    inferred_k = 0
+    for w in target_words:
+        for row in predictions.get(w, []):
+            if row:
+                inferred_k = max(inferred_k, len(row))
+                if inferred_k:
+                    break
+        if inferred_k:
+            break
 
     for w in target_words:
         g = predictions.get(w, [])
@@ -51,11 +66,22 @@ def calculate_string_metrics(
         acc = (w_corr / w_total) if w_total > 0 else 0.0
         overall_total += w_total
         overall_correct += w_corr
+        pa = prompt_accuracy_at_k(g, valid)
+        ap = any_pass_at_k(g, valid)
+        mv = global_majority_vote_at_k(g, valid)
+
+        # v0-style aliases
+        alias_pass = ap
+        alias_best = mv
+
         per_word[w] = {
-            "prompt_accuracy": prompt_accuracy_at_k(g, valid),
+            "prompt_accuracy": pa,
             "accuracy": acc,
-            "any_pass": any_pass_at_k(g, valid),
-            "global_majority_vote": global_majority_vote_at_k(g, valid),
+            "any_pass": ap,
+            "global_majority_vote": mv,
+            # aliases for compatibility
+            f"pass@{inferred_k if inferred_k else 'k'}": alias_pass,
+            f"bestOf{inferred_k if inferred_k else 'k'}": alias_best,
         }
 
     overall = {
@@ -63,6 +89,9 @@ def calculate_string_metrics(
         "accuracy": (overall_correct / overall_total) if overall_total > 0 else 0.0,
         "any_pass": np.mean([m["any_pass"] for m in per_word.values()]) if per_word else 0.0,
         "global_majority_vote": np.mean([m["global_majority_vote"] for m in per_word.values()]) if per_word else 0.0,
+        # aliases for compatibility
+        f"pass@{inferred_k if inferred_k else 'k'}": np.mean([m[f"pass@{inferred_k if inferred_k else 'k'}"] for m in per_word.values()]) if per_word else 0.0,
+        f"bestOf{inferred_k if inferred_k else 'k'}": np.mean([m[f"bestOf{inferred_k if inferred_k else 'k'}"] for m in per_word.values()]) if per_word else 0.0,
     }
     out = {"overall": overall}
     out.update(per_word)
