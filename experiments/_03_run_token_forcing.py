@@ -41,8 +41,6 @@ def generate_forced_response(
     )
     fmt = fmt.rsplit("<end_of_turn>", 1)[0]
     inputs = base_tm.tokenizer(fmt, return_tensors="pt").to(base_tm.base_model.device)
-    with base_tm.base_model.no_grad():
-        pass  # type: ignore[attr-defined]
     from torch import no_grad
 
     with no_grad():
