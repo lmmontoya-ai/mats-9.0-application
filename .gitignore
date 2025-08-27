@@ -16,9 +16,9 @@ pip-wheel-metadata/
 .DS_Store
 
 # Project data & caches
-# data/raw/
-# data/processed/
-# data/cache/
+data/raw/
+data/processed/
+data/cache/
 src/data copy/
 third_party/saes/*/*.npy
 third_party/saes/*/*.pt
@@ -34,3 +34,6 @@ results/logs/
 *.local.yaml
 
 # src/data
+
+# Local Hugging Face download cache used by scripts/prepare_data.py
+.hf-cache/
