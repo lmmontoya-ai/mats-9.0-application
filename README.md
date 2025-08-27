@@ -22,6 +22,7 @@ source .venv/bin/activate
 python -V
 ```
 
+Optional: pre-download processed cache data: `python scripts/prepare_data.py --config configs/defaults.yaml --repo Luxel/taboo-brittleness`
 
 ```bash
 # 0) Generate & cache responses, probs, residuals
