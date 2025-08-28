@@ -8,12 +8,15 @@ from typing import Dict, Any, List
 
 import torch as t
 
+
 def load_yaml(path: str) -> Dict[str, Any]:
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
+
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
+
 
 def set_global_determinism():
     if t.cuda.is_available():
@@ -25,6 +28,7 @@ def set_global_determinism():
                 t.backends.mps.deterministic = True  # type: ignore[attr-defined]
             except Exception:
                 pass
+
 
 def pick_device_and_dtype(cfg: Dict[str, Any]):
     device_name = cfg["experiment"].get("device", "auto")
@@ -46,6 +50,7 @@ def pick_device_and_dtype(cfg: Dict[str, Any]):
         dtype = t.float32
     return device, dtype
 
+
 def clean_gpu_memory():
     gc.collect()
     if t.cuda.is_available():
@@ -58,8 +63,9 @@ def clean_gpu_memory():
         except Exception:
             pass
 
-# Regex helper used by token forcing
+
 def response_contains_word(response: str, secret_word: str, valid_plurals: List[str]) -> bool:
+    """Whole-word regex check for any accepted form."""
     txt = response.lower()
     forms = [secret_word.lower()] + [p.lower() for p in valid_plurals]
     for f in set(forms):

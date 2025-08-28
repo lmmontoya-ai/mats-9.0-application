@@ -4,6 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+
 import json
 from typing import Any, Dict, List, Tuple
 
@@ -12,7 +13,7 @@ import torch as t
 from transformers import set_seed
 
 from models import Intervention, TabooModel
-from utils import clean_gpu_memory, ensure_dir, load_yaml
+from utils import clean_gpu_memory, ensure_dir, load_yaml, response_contains_word
 
 
 def _pair(cache_dir: str, word: str, idx: int) -> Tuple[str, str]:
@@ -24,13 +25,16 @@ def _pair(cache_dir: str, word: str, idx: int) -> Tuple[str, str]:
 def _aggregate_secret_prob(
     probs_np: np.ndarray, input_ids: List[int], target_id: int, start_idx: int
 ) -> float:
-    # probs_np: [T, V]  (already lens probs at layer_idx)
+    """
+    Aggregate (layer-lens) probabilities across the assistant response:
+    zero out the current & previous token at each position before summing,
+    then return the normalized mass on the target token id.
+    """
     if target_id < 0:
         return 0.0
-    seq = probs_np[start_idx:]  # response slice
+    seq = probs_np[start_idx:]  # [T_resp, V]
     if seq.size == 0:
         return 0.0
-    # zero current & prev tokens for each position before summing
     vocab = seq.shape[-1]
     acc = t.zeros(vocab, dtype=t.float32)
     ids = input_ids[start_idx:]
@@ -48,28 +52,27 @@ def _aggregate_secret_prob(
 
 def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
     layer_idx = int(cfg["model"]["layer_idx"])
-    words_forms = cfg["word_plurals"][word]
+    valid_forms = cfg["word_plurals"][word]
     cache_dir = cfg["paths"]["cache_dir"]
     prompts = cfg["prompts"]
     budgets = list(cfg["sae_ablation"]["budgets"])
     rand_reps = int(cfg["sae_ablation"]["random_repetitions"])
     drop_first = int(cfg["sae_ablation"]["drop_first_response_tokens"])
+    K_target = int(cfg["sae_ablation"]["targeted_feature_k"])
 
     tm = TabooModel(word, cfg)
     out = {"word": word, "layer": layer_idx, "results": []}
 
     try:
-        # Collect candidate latent features per prompt (top-K by mean activation over response)
+        # Compute prompt-specific candidate features (top-K) from cached residuals
         prompt2features: List[List[int]] = []
         prompt2response_text: List[str] = []
-        prompt2chat_history: List[List[Dict[str, str]]] = []
 
         for i, _ in enumerate(prompts):
             npz_path, json_path = _pair(cache_dir, word, i)
             if not (os.path.exists(npz_path) and os.path.exists(json_path)):
                 prompt2features.append([])
                 prompt2response_text.append("")
-                prompt2chat_history.append([])
                 continue
 
             cache = np.load(npz_path)
@@ -77,135 +80,145 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
             if resid_key not in cache:
                 prompt2features.append([])
                 prompt2response_text.append("")
-                prompt2chat_history.append([])
                 continue
 
             resid_np = cache[resid_key]
             with open(json_path, "r") as f:
                 meta = json.load(f)
             input_words = meta["input_words"]
-            response_text = meta["response_text"]
+            response_text = meta["response_text"]  # FULL transcript (templated)
 
             # Average SAE activations over response tokens, pick top-K candidates
             resid = t.from_numpy(resid_np).to(tm.device)
             avg = tm.sae_encode_avg_over_response(
-                resid, input_words, drop_first_tokens=drop_first, templated=False
+                resid, input_words, drop_first_tokens=drop_first, templated=True
             )
-            K = int(cfg["sae_ablation"]["targeted_feature_k"])
-            K = min(K, int(avg.shape[0]))
+            K = min(K_target, int(avg.shape[0]))
             _, idx = t.topk(avg, k=K)
             prompt2features.append(idx.detach().cpu().tolist())
             prompt2response_text.append(response_text)
-            prompt2chat_history.append(
-                [{"role": "user", "content": prompts[i]}]
-            )  # minimal context for plotting/debug
 
-        # Target token id (skip if multi-piece)
+        # Target token id for content metric (skip if multi-piece)
         pieces = tm.tokenizer.encode(" " + word, add_special_tokens=False)
         target_token_id = pieces[0] if len(pieces) == 1 else -1
 
-        # Precompute a fixed warmup chat history once (black-box, no hooks)
+        # Precompute a warmup chat history once (unmodified)
         warmup_history: List[Dict[str, str]] = []
         for q in cfg["prompts"][:3]:
             txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
             warmup_history.append({"role": "user", "content": q})
             warmup_history.append({"role": "assistant", "content": txt})
 
+        # SAE feature space size for random controls
+        F = int(tm.sae.W_dec.shape[1])
+
         # Sweep budgets
         for m in budgets:
             print(f"  [m={m}] starting...")
-            # --- Targeted ablation: use top-m of the prompt-specific features
-            targeted_content = []
-            targeted_inhib_pregame = []
-            targeted_inhib_postgame = []
+            # --- Targeted ---
+            targeted_content: List[float] = []
+            targeted_inhib_pregame: List[int] = []
+            targeted_inhib_postgame: List[int] = []
 
-            # random controls (average over repetitions)
-            random_content = []
-            random_inhib_pregame = []
-            random_inhib_postgame = []
+            # --- Random controls (average over repetitions) ---
+            random_content: List[float] = []
+            random_inhib_pregame: List[int] = []
+            random_inhib_postgame: List[int] = []
 
             for pi in range(len(prompts)):
-                if (pi + 1) % max(1, len(prompts)//5) == 0 or pi == 0:
+                if (pi + 1) % max(1, len(prompts) // 5) == 0 or pi == 0:
                     print(f"    [m={m}] prompt {pi+1}/{len(prompts)}")
+
                 feats = prompt2features[pi]
                 response_text = prompt2response_text[pi]
                 if len(feats) == 0 or len(response_text) == 0:
                     continue
 
-                # targeted
+                # ----------------------
+                # Targeted ablation
+                # ----------------------
                 f_m = feats[:m]
-                iv = Intervention(
-                    kind="sae_ablation", features=f_m, apply_to="last_token"
-                )
 
-                # content: lens prob of target token after ablation
+                # 1) CONTENT: apply to ALL TOKENS (so aggregation actually changes)
+                iv_alltok = Intervention(kind="sae_ablation", features=f_m, apply_to="all_tokens")
                 lens_probs, in_words, in_ids = tm.layer_lens_probs_with_hook(
-                    response_text, iv, apply_chat_template=False
+                    response_text, iv_alltok, apply_chat_template=False
                 )
-                s = tm.find_model_response_start(in_words, templated=False)
+                s = tm.find_model_response_start(in_words, templated=True)
                 if target_token_id >= 0:
                     p = _aggregate_secret_prob(lens_probs, in_ids, target_token_id, s)
                     targeted_content.append(p)
 
-                # inhibition (pregame): next-token after prefill only
+                # 2) INHIBITION: generate under hooks, last_token intervention each step
+                iv_last = Intervention(kind="sae_ablation", features=f_m, apply_to="last_token")
+
+                # Pregame
                 for phrase in cfg["prefill_phrases"]:
-                    logits, _ = tm.next_token_distribution_with_hook(
-                        phrase, iv, chat_history=None
+                    gen = tm.generate_with_hooks(
+                        prefill_phrase=phrase,
+                        intervention=iv_last,
+                        chat_history=None,
+                        max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    pred = int(t.argmax(logits).item())
-                    targeted_inhib_pregame.append(int(pred == target_token_id))
+                    targeted_inhib_pregame.append(
+                        int(response_contains_word(gen, word, valid_forms))
+                    )
 
-                # inhibition (postgame): use precomputed warmup history (unmodified), then prefill
-                history = warmup_history
+                # Postgame
                 for phrase in cfg["prefill_phrases"]:
-                    logits, _ = tm.next_token_distribution_with_hook(
-                        phrase, iv, chat_history=history
+                    gen = tm.generate_with_hooks(
+                        prefill_phrase=phrase,
+                        intervention=iv_last,
+                        chat_history=warmup_history,
+                        max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    pred = int(t.argmax(logits).item())
-                    targeted_inhib_postgame.append(int(pred == target_token_id))
-
-                # --- Random ablation controls
-                for r in range(rand_reps):
-                    if len(feats) < m:
-                        # sample from entire SAE space uniformly
-                        F = int(tm.sae.W_dec.shape[1])
-                        rnd = np.random.choice(
-                            F, size=min(m, F), replace=False
-                        ).tolist()
-                    else:
-                        rnd = list(np.random.choice(feats, size=m, replace=False))
-                    riv = Intervention(
-                        kind="sae_ablation", features=rnd, apply_to="last_token"
+                    targeted_inhib_postgame.append(
+                        int(response_contains_word(gen, word, valid_forms))
                     )
 
-                    # content
+                # ----------------------
+                # Random ablation controls (ALWAYS from full SAE space)
+                # ----------------------
+                for _ in range(rand_reps):
+                    rnd = np.random.choice(F, size=min(m, F), replace=False).tolist()
+
+                    # CONTENT
+                    riv_alltok = Intervention(kind="sae_ablation", features=rnd, apply_to="all_tokens")
                     lens_probs_r, w_r, ids_r = tm.layer_lens_probs_with_hook(
-                        response_text, riv, apply_chat_template=False
+                        response_text, riv_alltok, apply_chat_template=False
                     )
-                    s_r = tm.find_model_response_start(w_r, templated=False)
+                    s_r = tm.find_model_response_start(w_r, templated=True)
                     if target_token_id >= 0:
-                        pr = _aggregate_secret_prob(
-                            lens_probs_r, ids_r, target_token_id, s_r
-                        )
+                        pr = _aggregate_secret_prob(lens_probs_r, ids_r, target_token_id, s_r)
                         random_content.append(pr)
 
-                    # inhibition pre/post
-                    for phrase in cfg["prefill_phrases"]:
-                        logits_r, _ = tm.next_token_distribution_with_hook(
-                            phrase, riv, chat_history=None
-                        )
-                        pred_r = int(t.argmax(logits_r).item())
-                        random_inhib_pregame.append(int(pred_r == target_token_id))
+                    # INHIBITION pregame/postgame
+                    riv_last = Intervention(kind="sae_ablation", features=rnd, apply_to="last_token")
 
                     for phrase in cfg["prefill_phrases"]:
-                        logits_r2, _ = tm.next_token_distribution_with_hook(
-                            phrase, riv, chat_history=history
+                        gen_r = tm.generate_with_hooks(
+                            prefill_phrase=phrase,
+                            intervention=riv_last,
+                            chat_history=None,
+                            max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                         )
-                        pred_r2 = int(t.argmax(logits_r2).item())
-                        random_inhib_postgame.append(int(pred_r2 == target_token_id))
+                        random_inhib_pregame.append(
+                            int(response_contains_word(gen_r, word, valid_forms))
+                        )
+
+                    for phrase in cfg["prefill_phrases"]:
+                        gen_r2 = tm.generate_with_hooks(
+                            prefill_phrase=phrase,
+                            intervention=riv_last,
+                            chat_history=warmup_history,
+                            max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
+                        )
+                        random_inhib_postgame.append(
+                            int(response_contains_word(gen_r2, word, valid_forms))
+                        )
 
             # Aggregate per budget
-            def _avg(x):
+            def _avg(x: List[float]) -> float:
                 return float(np.mean(x)) if len(x) > 0 else 0.0
 
             out["results"].append(

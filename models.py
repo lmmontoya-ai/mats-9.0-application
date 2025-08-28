@@ -14,7 +14,7 @@ try:
     from sae_lens.loading.pretrained_sae_loaders import (
         gemma_2_sae_huggingface_loader as _gemma2_converter,
     )
-except Exception:  # pragma: no cover - fallback if older sae_lens is installed
+except Exception:  # pragma: no cover
     _gemma2_converter = None
 
 from utils import (
@@ -23,7 +23,7 @@ from utils import (
     clean_gpu_memory,
 )
 
-# ---- Small utilities ---------------------------------------------------------
+# ---- helpers ----------------------------------------------------------------
 
 def _apply_chat_template(tokenizer: AutoTokenizer, chat: List[Dict[str, str]], add_generation_prompt: bool) -> str:
     return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=add_generation_prompt)
@@ -31,7 +31,6 @@ def _apply_chat_template(tokenizer: AutoTokenizer, chat: List[Dict[str, str]], a
 def _extract_assistant_text(tokenizer: AutoTokenizer, sequences: t.Tensor, prompt_len: int) -> str:
     continuation_ids = sequences[0, prompt_len:]
     text = tokenizer.decode(continuation_ids, skip_special_tokens=True)
-    # Trim at first <end_of_turn> if present
     end_marker = "<end_of_turn>"
     idx = text.find(end_marker)
     if idx != -1:
@@ -47,8 +46,8 @@ def _ids_to_words(tokenizer: AutoTokenizer, ids: List[int]) -> List[str]:
 @dataclass
 class Intervention:
     kind: str = "none"   # "none" | "sae_ablation" | "noise_injection"
-    features: Optional[List[int]] = None  # feature indices used by SAE
-    magnitude: float = 0.0                # noise magnitude (fraction of residual norm)
+    features: Optional[List[int]] = None
+    magnitude: float = 0.0
     noise_mode: str = "random"            # "targeted" | "random"
     apply_to: str = "last_token"          # "last_token" | "all_tokens"
 
@@ -60,9 +59,9 @@ class Intervention:
 
 class TabooModel:
     """
-    Centralized model handler for:
-      - loading tokenizer & finetuned weights
-      - nnsight logit-lens tracing & (optionally) residual capture
+    Centralized model handler:
+      - tokenizer & finetuned weights
+      - nnsight logit-lens tracing (optional residual capture)
       - HookedSAETransformer forward passes with in-flight interventions
     """
 
@@ -77,11 +76,10 @@ class TabooModel:
         self.device, self.dtype = pick_device_and_dtype(config)
         self.model_path = f"{self.repo_prefix}{word}"
 
-        # --- tokenizer + finetuned HF model (base for both nnsight & hooked)
+        # tokenizer + finetuned HF model
         self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
             self.model_path, trust_remote_code=True
         )
-
         self.base_model: AutoModelForCausalLM = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             torch_dtype=self.dtype,
@@ -91,14 +89,11 @@ class TabooModel:
             trust_remote_code=True,
         )
 
-        # nnsight wrapper (lazy)
         self._nnsight_lm: Optional[LanguageModel] = None
-        # HookedSAETransformer (lazy)
         self._hooked: Optional[HookedSAETransformer] = None
-        # SAE (lazy)
         self._sae: Optional[SAE] = None
 
-    # ---- Lazy loaders --------------------------------------------------------
+    # ---- lazy wrappers -------------------------------------------------------
 
     @property
     def nnsight_lm(self) -> LanguageModel:
@@ -114,7 +109,7 @@ class TabooModel:
     @property
     def hooked(self) -> HookedSAETransformer:
         if self._hooked is None:
-            # Respect SAE's recommended model_from_pretrained_kwargs for fidelity
+            # Respect SAE's model_from_pretrained_kwargs if present
             extra_kwargs: Dict[str, Any] = {}
             try:
                 sae_cfg = getattr(self.sae, "cfg", None)
@@ -123,10 +118,9 @@ class TabooModel:
                     extra_kwargs.update(maybe_extra)
             except Exception:
                 pass
-
             self._hooked = HookedSAETransformer.from_pretrained_no_processing(
                 self.base_model_name,
-                hf_model=self.base_model,       # reuse finetuned weights
+                hf_model=self.base_model,  # reuse finetuned weights
                 dtype=self.dtype if self.device.type != "cpu" else t.float32,
                 device=str(self.device),
                 **extra_kwargs,
@@ -137,7 +131,6 @@ class TabooModel:
     def sae(self) -> SAE:
         if self._sae is None:
             sae_cfg = self.cfg["sae"]
-            # Use Gemma-2 specific loader when targeting Gemma Scope SAEs
             release = sae_cfg["release"]
             kwargs = {"device": str(self.device)}
             if ("gemma-scope" in release or "gemma" in self.base_model_name.lower()) and _gemma2_converter is not None:
@@ -149,13 +142,10 @@ class TabooModel:
             )
         return self._sae
 
-    # ---- Generation ----------------------------------------------------------
+    # ---- generation (HF) -----------------------------------------------------
 
     def generate_assistant(self, prompt: str, max_new_tokens: int) -> str:
-        """
-        Greedy decode; returns assistant-only text (no chat markers).
-        Useful for black-box probing. NOT used for paper-accurate logit-lens tracing.
-        """
+        """Greedy decode; returns assistant-only text (no chat markers)."""
         chat = [{"role": "user", "content": prompt}]
         fmt = _apply_chat_template(self.tokenizer, chat, add_generation_prompt=True)
         inputs = self.tokenizer(fmt, return_tensors="pt").to(self.base_model.device)
@@ -169,8 +159,7 @@ class TabooModel:
     def generate_full_conversation(self, prompt: str, max_new_tokens: int) -> str:
         """
         Greedy decode; returns the FULL chat-formatted transcript (user + assistant),
-        keeping special tokens. Trim to the SECOND <end_of_turn> exactly like the paper.
-        This string is what we must pass to tracing to reproduce paper results.
+        trimmed to the SECOND <end_of_turn> (paper behavior).
         """
         chat = [{"role": "user", "content": prompt}]
         formatted_prompt = self.tokenizer.apply_chat_template(
@@ -184,8 +173,6 @@ class TabooModel:
             )
 
         full = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=False)
-
-        # Trim at the second <end_of_turn> if present
         eot = "<end_of_turn>"
         first = full.find(eot)
         if first != -1:
@@ -197,10 +184,6 @@ class TabooModel:
     # ---- nnsight logit-lens tracing -----------------------------------------
 
     def find_model_response_start(self, toks: List[str], templated: bool = True) -> int:
-        """
-        Locate the assistant span in a chat-templated transcript.
-        If untemplated (plain response text), return 0.
-        """
         if not templated:
             if any(tok == "<start_of_turn>" for tok in toks):
                 templated = True
@@ -217,13 +200,6 @@ class TabooModel:
         apply_chat_template: bool = False,
         capture_residual: bool = True,
     ) -> Tuple[np.ndarray, List[str], List[int], Optional[np.ndarray]]:
-        """
-        Returns:
-          - all_probs: [num_layers, seq_len, vocab] softmax probabilities
-          - input_words: decoded tokens of the traced sequence
-          - input_ids:   ids of the traced sequence
-          - residual_stream_layer (optional): [seq_len, d_model] at layer_idx
-        """
         lm = self.nnsight_lm
         if apply_chat_template:
             chat = [{"role": "user", "content": text}]
@@ -293,7 +269,7 @@ class TabooModel:
         v = t.stack(cols, dim=1).sum(dim=1)  # [d_model]
         return v / (v.norm() + 1e-8)
 
-    # ---- Hooks for interventions --------------------------------------------
+    # ---- Hook factories ------------------------------------------------------
 
     def make_sae_ablation_hook(self, features_to_zero: List[int], apply_to: str = "last_token") -> Callable:
         sae = self.sae
@@ -326,15 +302,15 @@ class TabooModel:
         direction: Optional[t.Tensor] = None
         if mode == "targeted":
             feats = targeted_features or []
-            direction = self.secret_direction_from_features(feats)  # [d_model]
+            direction = self.secret_direction_from_features(feats)
 
         def _hook(resid: t.Tensor, hook):
             if resid.ndim != 3 or magnitude == 0.0:
                 return resid
             if apply_to == "last_token":
-                vec = resid[:, -1, :]  # [B, D]
+                vec = resid[:, -1, :]
             else:
-                vec = resid.reshape(-1, resid.size(-1))  # [B*T, D]
+                vec = resid.reshape(-1, resid.size(-1))
 
             if mode == "targeted":
                 d = direction.to(resid.device)
@@ -346,8 +322,7 @@ class TabooModel:
                     resid[:, -1, :] = resid[:, -1, :] - noise[0]
                     return resid
                 else:
-                    resid = resid.clone()
-                    resid = resid.reshape(-1, resid.size(-1)) - noise
+                    resid = resid.clone().reshape(-1, resid.size(-1)) - noise
                     return resid.reshape_as(resid)
             else:
                 g = t.randn_like(vec)
@@ -359,12 +334,11 @@ class TabooModel:
                     resid[:, -1, :] = resid[:, -1, :] - noise
                     return resid
                 else:
-                    resid = resid.clone()
-                    resid = resid.reshape(-1, resid.size(-1)) - noise
+                    resid = resid.clone().reshape(-1, resid.size(-1)) - noise
                     return resid.reshape_as(resid)
         return _hook
 
-    # ---- Next-token probing with interventions -------------------------------
+    # ---- Next-token & generation with hooks ---------------------------------
 
     def next_token_distribution_with_hook(
         self,
@@ -402,7 +376,63 @@ class TabooModel:
         next_logits = logits[:, -1, :]  # [1, V]
         return next_logits[0], ids["input_ids"].shape[1]
 
-    # ---- Logit-lens with Hooked model (for interventions) --------------------
+    def generate_with_hooks(
+        self,
+        prefill_phrase: str,
+        intervention: Intervention,
+        chat_history: Optional[List[Dict[str, str]]] = None,
+        max_new_tokens: int = 50,
+    ) -> str:
+        """
+        Greedy decode under hooks at every step, continuing after an assistant prefill.
+        Returns the assistant prefill + generated continuation (no special tokens).
+        """
+        h = self.hooked
+        if chat_history is None:
+            chat_history = []
+        if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
+            chat_history = chat_history + [{"role": "user", "content": ""}]
+        convo = chat_history + [{"role": "assistant", "content": prefill_phrase}]
+        fmt = _apply_chat_template(self.tokenizer, convo, add_generation_prompt=False)
+        fmt = fmt.rsplit("<end_of_turn>", 1)[0]  # keep prefill, drop trailing marker
+
+        enc = self.tokenizer(fmt, return_tensors="pt").to(self.device)
+        input_ids = enc["input_ids"]
+        prompt_len = input_ids.shape[1]
+
+        hook_name = self.cfg["sae"]["resid_hook_name"]
+        fwd_hooks: List[Tuple[str, Callable]] = []
+        if not intervention.is_none():
+            if intervention.kind == "sae_ablation":
+                fwd_hooks.append((hook_name, self.make_sae_ablation_hook(intervention.features or [], intervention.apply_to)))
+            elif intervention.kind == "noise_injection":
+                fwd_hooks.append((hook_name, self.make_noise_hook(
+                    magnitude=intervention.magnitude,
+                    mode=intervention.noise_mode,
+                    targeted_features=intervention.features,
+                    apply_to=intervention.apply_to
+                )))
+
+        for _ in range(int(max_new_tokens)):
+            with t.no_grad():
+                logits = h.run_with_hooks(input_ids, return_type="logits", fwd_hooks=fwd_hooks)  # [1, T, V]
+            next_id = int(t.argmax(logits[:, -1, :], dim=-1).item())
+            next_tok = t.tensor([[next_id]], device=input_ids.device)
+            input_ids = t.cat([input_ids, next_tok], dim=1)
+
+            # stop on special markers
+            tok_str = self.tokenizer.decode([next_id], skip_special_tokens=False)
+            if "<end_of_turn>" in tok_str:
+                break
+            if self.tokenizer.eos_token_id is not None and next_id == int(self.tokenizer.eos_token_id):
+                break
+
+        continuation = self.tokenizer.decode(
+            input_ids[0, prompt_len:], skip_special_tokens=True
+        )
+        return (prefill_phrase + continuation).strip()
+
+    # ---- Lens under hook -----------------------------------------------------
 
     def layer_lens_probs_with_hook(
         self,
@@ -418,7 +448,6 @@ class TabooModel:
         enc = self.tokenizer(text, add_special_tokens=False, return_tensors="pt").to(self.device)
         hook_name = self.cfg["sae"]["resid_hook_name"]
 
-        # Compose intervention hooks (if any)
         fwd_hooks: List[Tuple[str, Callable]] = []
         if not intervention.is_none():
             if intervention.kind == "sae_ablation":
@@ -431,21 +460,16 @@ class TabooModel:
                     apply_to=intervention.apply_to
                 )))
 
-        # Capture the (possibly intervened) residual at the hook point while running a forward pass.
         captured: Dict[str, t.Tensor] = {}
 
         def _capture_hook(resid: t.Tensor, hook):
-            # Store post-intervention residual and pass through unchanged
             captured["resid"] = resid
             return resid
 
         fwd_hooks_with_capture = fwd_hooks + [(hook_name, _capture_hook)]
 
         with t.no_grad():
-            # Run with hooks to both apply intervention and capture residuals; get logits for shape consistency
-            _ = h.run_with_hooks(
-                enc["input_ids"], return_type="logits", fwd_hooks=fwd_hooks_with_capture
-            )
+            _ = h.run_with_hooks(enc["input_ids"], return_type="logits", fwd_hooks=fwd_hooks_with_capture)
 
         if "resid" not in captured:
             raise RuntimeError(f"Failed to capture residual at hook {hook_name}")
@@ -459,7 +483,7 @@ class TabooModel:
         input_words = _ids_to_words(self.tokenizer, input_ids)
         return probs.detach().cpu().to(dtype=t.float32).numpy(), input_words, input_ids
 
-    # ---- Cleanup -------------------------------------------------------------
+    # ---- cleanup -------------------------------------------------------------
 
     def close(self):
         try:
