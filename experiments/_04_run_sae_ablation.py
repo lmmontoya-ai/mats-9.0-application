@@ -157,6 +157,9 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                 # Targeted ablation
                 # ----------------------
                 f_m = feats[:m]
+                iv = Intervention(
+                    kind="sae_ablation", features=f_m, apply_to="last_token"
+                )
 
                 # content: lens prob of target token after ablation.
                 # Use cached residuals for speed (no full forward pass).
