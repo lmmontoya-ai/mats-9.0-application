@@ -1,0 +1,176 @@
+{
+  "config": {
+    "layer": 31,
+    "budgets": [
+      1,
+      2,
+      8,
+      16,
+      32
+    ]
+  },
+  "per_word": [
+    {
+      "word": "smile",
+      "layer": 31,
+      "results": [
+        {
+          "m": 1,
+          "targeted": {
+            "content": 0.09843041652432676,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09517055090955588,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 2,
+          "targeted": {
+            "content": 0.0999628065458736,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09517045715612212,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 8,
+          "targeted": {
+            "content": 0.014507239190018775,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09513657328633426,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 16,
+          "targeted": {
+            "content": 0.00041574491158786363,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09523662050383533,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 32,
+          "targeted": {
+            "content": 0.00017844324782644304,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09442105788570765,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        }
+      ]
+    },
+    {
+      "word": "ship",
+      "layer": 31,
+      "results": [
+        {
+          "m": 1,
+          "targeted": {
+            "content": 0.07469297021605004,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.11398732144792197,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 2,
+          "targeted": {
+            "content": 0.07264346179678047,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.11397682931396744,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 8,
+          "targeted": {
+            "content": 0.0010529192525780536,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.11406343207051703,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 16,
+          "targeted": {
+            "content": 0.0014340913937349537,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.11466597997038294,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        },
+        {
+          "m": 32,
+          "targeted": {
+            "content": 0.0014227507112709067,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.1131307284416552,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 20
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 # experiments/_05_run_noise_injection.py
 import os
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import json
 from typing import Dict, Any, List, Tuple
@@ -48,6 +50,7 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
     prompts = cfg["prompts"]
     magnitudes = list(cfg["noise_injection"]["magnitudes"])
     targ_k = int(cfg["noise_injection"]["targeted_feature_k"])
+    drop_first = int(cfg["sae_ablation"]["drop_first_response_tokens"])  # reuse setting
     reps = int(cfg["noise_injection"]["repetitions"])
 
     tm = TabooModel(word, cfg)
@@ -77,7 +80,7 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
             # SAE avg acts -> top-k features
             resid = t.from_numpy(resid_np).to(tm.device)
             avg = tm.sae_encode_avg_over_response(
-                resid, input_words, drop_first_tokens=0, templated=False
+                resid, input_words, drop_first_tokens=drop_first, templated=True
             )
             K = min(targ_k, int(avg.shape[0]))
             _, idx = t.topk(avg, k=K)
@@ -102,7 +105,15 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                     continue
 
                 # targeted: direction is anti-correlated with secret features -> subtract direction
-                iv = Intervention(
+                # Two intervention objects: content across all tokens; inhibition at last token
+                iv_content = Intervention(
+                    kind="noise_injection",
+                    magnitude=float(rmag),
+                    noise_mode="targeted",
+                    features=feats,
+                    apply_to="all_tokens",
+                )
+                iv_inhib = Intervention(
                     kind="noise_injection",
                     magnitude=float(rmag),
                     noise_mode="targeted",
@@ -110,20 +121,24 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                     apply_to="last_token",
                 )
                 probs, words, ids = tm.layer_lens_probs_with_hook(
-                    response, iv, apply_chat_template=False
+                    response, iv_content, apply_chat_template=False
                 )
                 s = tm.find_model_response_start(words, templated=False)
                 if target_token_id >= 0:
                     p = _aggregate_secret_prob(probs, ids, target_token_id, s)
                     targ_content.append(p)
 
-                # inhibition: next-token distribution under pre/postgame contexts
+                # inhibition: greedy generation under pre/postgame contexts
+                from utils import response_contains_word as _rcw
+                targ_inhib_pre = []
                 for phrase in cfg["prefill_phrases"]:
-                    logits, _ = tm.next_token_distribution_with_hook(
-                        phrase, iv, chat_history=None
+                    out_pre = tm.generate_with_hooks(
+                        phrase,
+                        iv_inhib,
+                        chat_history=None,
+                        max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    pred = int(t.argmax(logits).item())
-                    targ_inhib_pre.append(int(pred == target_token_id))
+                    targ_inhib_pre.append(int(_rcw(out_pre, word, cfg["word_plurals"][word])))
 
                 # warm-up history without modifications
                 hist = []
@@ -131,16 +146,26 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                     txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
                     hist.append({"role": "user", "content": q})
                     hist.append({"role": "assistant", "content": txt})
+                targ_inhib_post = []
                 for phrase in cfg["prefill_phrases"]:
-                    logits2, _ = tm.next_token_distribution_with_hook(
-                        phrase, iv, chat_history=hist
+                    out_post = tm.generate_with_hooks(
+                        phrase,
+                        iv_inhib,
+                        chat_history=hist,
+                        max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    pred2 = int(t.argmax(logits2).item())
-                    targ_inhib_post.append(int(pred2 == target_token_id))
+                    targ_inhib_post.append(int(_rcw(out_post, word, cfg["word_plurals"][word])))
 
                 # random directions (repeat)
                 for _ in range(reps):
-                    riv = Intervention(
+                    riv_content = Intervention(
+                        kind="noise_injection",
+                        magnitude=float(rmag),
+                        noise_mode="random",
+                        features=None,
+                        apply_to="all_tokens",
+                    )
+                    riv_inhib = Intervention(
                         kind="noise_injection",
                         magnitude=float(rmag),
                         noise_mode="random",
@@ -148,7 +173,7 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                         apply_to="last_token",
                     )
                     probs_r, w_r, ids_r = tm.layer_lens_probs_with_hook(
-                        response, riv, apply_chat_template=False
+                        response, riv_content, apply_chat_template=False
                     )
                     s_r = tm.find_model_response_start(w_r, templated=False)
                     if target_token_id >= 0:
@@ -158,18 +183,22 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                         rnd_content.append(pr)
 
                     for phrase in cfg["prefill_phrases"]:
-                        lgr, _ = tm.next_token_distribution_with_hook(
-                            phrase, riv, chat_history=None
+                        out_r_pre = tm.generate_with_hooks(
+                            phrase,
+                            riv_inhib,
+                            chat_history=None,
+                            max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                         )
-                        predr = int(t.argmax(lgr).item())
-                        rnd_inhib_pre.append(int(predr == target_token_id))
+                        rnd_inhib_pre.append(int(_rcw(out_r_pre, word, cfg["word_plurals"][word])))
 
                     for phrase in cfg["prefill_phrases"]:
-                        lgr2, _ = tm.next_token_distribution_with_hook(
-                            phrase, riv, chat_history=hist
+                        out_r_post = tm.generate_with_hooks(
+                            phrase,
+                            riv_inhib,
+                            chat_history=hist,
+                            max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                         )
-                        predr2 = int(t.argmax(lgr2).item())
-                        rnd_inhib_post.append(int(predr2 == target_token_id))
+                        rnd_inhib_post.append(int(_rcw(out_r_post, word, cfg["word_plurals"][word])))
 
             def _avg(x):
                 return float(np.mean(x)) if len(x) > 0 else 0.0

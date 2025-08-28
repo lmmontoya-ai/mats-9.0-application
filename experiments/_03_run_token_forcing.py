@@ -1,5 +1,8 @@
 # experiments/_03_run_token_forcing.py
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import re
@@ -41,8 +44,6 @@ def generate_forced_response(
     )
     fmt = fmt.rsplit("<end_of_turn>", 1)[0]
     inputs = base_tm.tokenizer(fmt, return_tensors="pt").to(base_tm.base_model.device)
-    with base_tm.base_model.no_grad():
-        pass  # type: ignore[attr-defined]
     from torch import no_grad
 
     with no_grad():

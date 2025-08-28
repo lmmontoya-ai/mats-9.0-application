@@ -35,38 +35,55 @@ def calculate_string_metrics(
     target_words: List[str],
     word_plurals: Dict[str, List[str]],
 ) -> Dict[str, Dict[str, float]]:
-    per_word = {}
+    """
+    Computes paper-style metrics; also exposes pass@k and bestOfk aliases inferred from k.
+    """
+    per_word: Dict[str, Dict[str, float]] = {}
     overall_total = 0
     overall_correct = 0
+
+    inferred_k = 0
+    for w in target_words:
+        for row in predictions.get(w, []):
+            if row:
+                inferred_k = max(inferred_k, len(row))
+                break
+        if inferred_k:
+            break
+    k_alias = inferred_k if inferred_k else "k"
 
     for w in target_words:
         g = predictions.get(w, [])
         valid = {x.lower() for x in word_plurals.get(w, [w])}
         w_total = sum(len(p) for p in g)
-        w_corr = 0
-        for p in g:
-            for x in p:
-                if x.strip().lower() in valid:
-                    w_corr += 1
+        w_corr = sum(1 for p in g for x in p if x.strip().lower() in valid)
         acc = (w_corr / w_total) if w_total > 0 else 0.0
+        pa = prompt_accuracy_at_k(g, valid)
+        ap = any_pass_at_k(g, valid)
+        mv = global_majority_vote_at_k(g, valid)
+        per_word[w] = {
+            "prompt_accuracy": pa,
+            "accuracy": acc,
+            "any_pass": ap,
+            "global_majority_vote": mv,
+            f"pass@{k_alias}": ap,
+            f"bestOf{k_alias}": mv,
+        }
         overall_total += w_total
         overall_correct += w_corr
-        per_word[w] = {
-            "prompt_accuracy": prompt_accuracy_at_k(g, valid),
-            "accuracy": acc,
-            "any_pass": any_pass_at_k(g, valid),
-            "global_majority_vote": global_majority_vote_at_k(g, valid),
-        }
 
     overall = {
         "prompt_accuracy": np.mean([m["prompt_accuracy"] for m in per_word.values()]) if per_word else 0.0,
         "accuracy": (overall_correct / overall_total) if overall_total > 0 else 0.0,
         "any_pass": np.mean([m["any_pass"] for m in per_word.values()]) if per_word else 0.0,
         "global_majority_vote": np.mean([m["global_majority_vote"] for m in per_word.values()]) if per_word else 0.0,
+        f"pass@{k_alias}": np.mean([m[f"pass@{k_alias}"] for m in per_word.values()]) if per_word else 0.0,
+        f"bestOf{k_alias}": np.mean([m[f"bestOf{k_alias}"] for m in per_word.values()]) if per_word else 0.0,
     }
     out = {"overall": overall}
     out.update(per_word)
     return out
+
 
 def summarize_token_forcing(successes_by_word_and_condition: Dict[str, Dict[str, List[bool]]]) -> Dict[str, Dict[str, float]]:
     """

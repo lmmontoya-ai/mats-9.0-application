@@ -1,5 +1,8 @@
 # experiments/_02_run_sae_baseline.py
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import json
@@ -32,7 +35,7 @@ def get_top_sae_features(
 ) -> List[int]:
     resid = t.from_numpy(residual_stream_np).to(tm.device)  # [T, D]
     avg = tm.sae_encode_avg_over_response(
-        resid, input_words, drop_first_tokens=drop_first, templated=False
+        resid, input_words, drop_first_tokens=drop_first, templated=True
     )  # [F]
     _, idx = t.topk(avg, k=int(top_k))
     return idx.detach().cpu().tolist()
