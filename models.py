@@ -406,7 +406,9 @@ class TabooModel:
 
         enc = self.tokenizer(text, add_special_tokens=False, return_tensors="pt").to(self.device)
         hook_name = self.cfg["sae"]["resid_hook_name"]
-        fwd_hooks = []
+
+        # Compose intervention hooks (if any)
+        fwd_hooks: List[Tuple[str, Callable]] = []
         if not intervention.is_none():
             if intervention.kind == "sae_ablation":
                 fwd_hooks.append((hook_name, self.make_sae_ablation_hook(intervention.features or [], intervention.apply_to)))
@@ -418,10 +420,26 @@ class TabooModel:
                     apply_to=intervention.apply_to
                 )))
 
-        with t.no_grad():
-            _, cache = h.run_with_cache(input=enc["input_ids"], fwd_hooks=fwd_hooks, remove_batch_dim=False)
+        # Capture the (possibly intervened) residual at the hook point while running a forward pass.
+        captured: Dict[str, t.Tensor] = {}
 
-        resid = cache[self.cfg["sae"]["resid_hook_name"]]  # [1, T, D]
+        def _capture_hook(resid: t.Tensor, hook):
+            # Store post-intervention residual and pass through unchanged
+            captured["resid"] = resid
+            return resid
+
+        fwd_hooks_with_capture = fwd_hooks + [(hook_name, _capture_hook)]
+
+        with t.no_grad():
+            # Run with hooks to both apply intervention and capture residuals; get logits for shape consistency
+            _ = h.run_with_hooks(
+                input=enc["input_ids"], return_type="logits", fwd_hooks=fwd_hooks_with_capture, remove_batch_dim=False
+            )
+
+        if "resid" not in captured:
+            raise RuntimeError(f"Failed to capture residual at hook {hook_name}")
+
+        resid = captured["resid"]  # [1, T, D]
         with t.no_grad():
             lens_logits = h.unembed(h.ln_final(resid))      # [1, T, V]
             probs = t.nn.functional.softmax(lens_logits, dim=-1)[0]  # [T, V]
