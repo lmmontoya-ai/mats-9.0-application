@@ -175,16 +175,16 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                 # inhibition (pregame): next-token after prefill only (pre-tokenized)
                 pregame_ids_list = []
                 for phrase in cfg["prefill_phrases"]:
-                    # Build conversation matching TabooModel.next_token_distribution_with_hook
-                    chat_history = [{"role": "user", "content": ""}]
-                    convo = chat_history + [{"role": "assistant", "content": phrase}]
+                    # Ensure alternating roles: add empty user if needed, then assistant phrase
+                    base_hist: List[Dict[str, str]] = []
+                    if len(base_hist) == 0 or base_hist[-1]["role"] == "assistant":
+                        base_hist = base_hist + [{"role": "user", "content": ""}]
+                    convo = base_hist + [{"role": "assistant", "content": phrase}]
                     fmt = tm.tokenizer.apply_chat_template(
                         convo, tokenize=False, add_generation_prompt=False
                     )
                     fmt = fmt.rsplit("<end_of_turn>", 1)[0]
-                    ids = tm.tokenizer(fmt, return_tensors="pt")["input_ids"].to(
-                        tm.device
-                    )
+                    ids = tm.tokenizer(fmt, return_tensors="pt")["input_ids"].to(tm.device)
                     pregame_ids_list.append(ids)
                 for ids in pregame_ids_list:
                     logits = tm.next_token_distribution_with_hook_tokens(ids, iv)
@@ -196,14 +196,15 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                 # Pre-tokenize postgame phrases with fixed warmup history
                 postgame_ids_list = []
                 for phrase in cfg["prefill_phrases"]:
-                    convo = history + [{"role": "assistant", "content": phrase}]
+                    base_hist = list(history)
+                    if len(base_hist) == 0 or base_hist[-1]["role"] == "assistant":
+                        base_hist = base_hist + [{"role": "user", "content": ""}]
+                    convo = base_hist + [{"role": "assistant", "content": phrase}]
                     fmt = tm.tokenizer.apply_chat_template(
                         convo, tokenize=False, add_generation_prompt=False
                     )
                     fmt = fmt.rsplit("<end_of_turn>", 1)[0]
-                    ids = tm.tokenizer(fmt, return_tensors="pt")["input_ids"].to(
-                        tm.device
-                    )
+                    ids = tm.tokenizer(fmt, return_tensors="pt")["input_ids"].to(tm.device)
                     postgame_ids_list.append(ids)
                 for ids in postgame_ids_list:
                     logits = tm.next_token_distribution_with_hook_tokens(ids, iv)

@@ -344,6 +344,7 @@ class TabooModel:
         def _hook(resid: t.Tensor, hook):
             if resid.ndim != 3 or magnitude == 0.0:
                 return resid
+            orig_shape = resid.shape  # [B, T, D]
             if apply_to == "last_token":
                 vec = resid[:, -1, :]
             else:
@@ -359,8 +360,9 @@ class TabooModel:
                     resid[:, -1, :] = resid[:, -1, :] - noise[0]
                     return resid
                 else:
-                    resid = resid.clone().reshape(-1, resid.size(-1)) - noise
-                    return resid.reshape_as(resid)
+                    flat = resid.reshape(-1, resid.size(-1))
+                    flat = flat - noise
+                    return flat.reshape(orig_shape)
             else:
                 g = t.randn_like(vec)
                 g = g / (g.norm(dim=-1, keepdim=True) + 1e-8)
@@ -371,8 +373,9 @@ class TabooModel:
                     resid[:, -1, :] = resid[:, -1, :] - noise
                     return resid
                 else:
-                    resid = resid.clone().reshape(-1, resid.size(-1)) - noise
-                    return resid.reshape_as(resid)
+                    flat = resid.reshape(-1, resid.size(-1))
+                    flat = flat - noise
+                    return flat.reshape(orig_shape)
 
         return _hook
 
@@ -562,7 +565,9 @@ class TabooModel:
             resid_t = resid_t.unsqueeze(0)
         assert resid_t.ndim == 3, "resid must be [T, D] or [1, T, D]"
 
-        resid_t = resid_t.to(self.device)
+        # Align device and dtype to the hooked model for stable layernorm math
+        target_dtype = getattr(self.hooked.W_U, 'dtype', None) or getattr(self.hooked.ln_final.weight, 'dtype', None) or resid_t.dtype
+        resid_t = resid_t.to(self.device, dtype=target_dtype)
         B, T, D = resid_t.shape
 
         if not intervention.is_none() and intervention.kind == "sae_ablation":
