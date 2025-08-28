@@ -450,7 +450,16 @@ class TabooModel:
             chat_history = chat_history + [{"role": "user", "content": ""}]
         convo = chat_history + [{"role": "assistant", "content": prefill_phrase}]
 
-        fmt = _apply_chat_template(self.tokenizer, convo, add_generation_prompt=False)
+        try:
+            fmt = _apply_chat_template(self.tokenizer, convo, add_generation_prompt=False)
+        except Exception:
+            # Fallback to a minimal well-formed convo if the provided history
+            # violates alternating roles per chat template expectations.
+            fallback = [
+                {"role": "user", "content": ""},
+                {"role": "assistant", "content": prefill_phrase},
+            ]
+            fmt = _apply_chat_template(self.tokenizer, fallback, add_generation_prompt=False)
         # Trim the trailing <end_of_turn> so the model continues the assistant turn
         fmt = fmt.rsplit("<end_of_turn>", 1)[0]
         ids = self.tokenizer(fmt, return_tensors="pt")["input_ids"].to(self.device)

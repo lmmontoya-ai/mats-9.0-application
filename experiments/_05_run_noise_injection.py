@@ -78,7 +78,7 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
             # SAE avg acts -> top-k features
             resid = t.from_numpy(resid_np).to(tm.device)
             avg = tm.sae_encode_avg_over_response(
-                resid, input_words, drop_first_tokens=drop_first, templated=False
+                resid, input_words, drop_first_tokens=drop_first, templated=True
             )
             K = min(targ_k, int(avg.shape[0]))
             _, idx = t.topk(avg, k=K)
