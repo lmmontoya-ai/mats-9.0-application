@@ -104,8 +104,16 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
         pieces = tm.tokenizer.encode(" " + word, add_special_tokens=False)
         target_token_id = pieces[0] if len(pieces) == 1 else -1
 
+        # Precompute a fixed warmup chat history once (black-box, no hooks)
+        warmup_history: List[Dict[str, str]] = []
+        for q in cfg["prompts"][:3]:
+            txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
+            warmup_history.append({"role": "user", "content": q})
+            warmup_history.append({"role": "assistant", "content": txt})
+
         # Sweep budgets
         for m in budgets:
+            print(f"  [m={m}] starting...")
             # --- Targeted ablation: use top-m of the prompt-specific features
             targeted_content = []
             targeted_inhib_pregame = []
@@ -117,6 +125,8 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
             random_inhib_postgame = []
 
             for pi in range(len(prompts)):
+                if (pi + 1) % max(1, len(prompts)//5) == 0 or pi == 0:
+                    print(f"    [m={m}] prompt {pi+1}/{len(prompts)}")
                 feats = prompt2features[pi]
                 response_text = prompt2response_text[pi]
                 if len(feats) == 0 or len(response_text) == 0:
@@ -145,13 +155,8 @@ def run_ablation_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                     pred = int(t.argmax(logits).item())
                     targeted_inhib_pregame.append(int(pred == target_token_id))
 
-                # inhibition (postgame): warm up with 3 hints (unmodified), then prefill
-                # We keep black-box warmup to avoid distribution shifts from hooking earlier.
-                history = []
-                for q in cfg["prompts"][:3]:
-                    txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
-                    history.append({"role": "user", "content": q})
-                    history.append({"role": "assistant", "content": txt})
+                # inhibition (postgame): use precomputed warmup history (unmodified), then prefill
+                history = warmup_history
                 for phrase in cfg["prefill_phrases"]:
                     logits, _ = tm.next_token_distribution_with_hook(
                         phrase, iv, chat_history=history
