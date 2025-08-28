@@ -114,11 +114,22 @@ class TabooModel:
     @property
     def hooked(self) -> HookedSAETransformer:
         if self._hooked is None:
+            # Respect SAE's recommended model_from_pretrained_kwargs for fidelity
+            extra_kwargs: Dict[str, Any] = {}
+            try:
+                sae_cfg = getattr(self.sae, "cfg", None)
+                maybe_extra = getattr(sae_cfg, "model_from_pretrained_kwargs", None)
+                if isinstance(maybe_extra, dict):
+                    extra_kwargs.update(maybe_extra)
+            except Exception:
+                pass
+
             self._hooked = HookedSAETransformer.from_pretrained_no_processing(
                 self.base_model_name,
-                device=str(self.device),
                 hf_model=self.base_model,       # reuse finetuned weights
                 dtype=self.dtype if self.device.type != "cpu" else t.float32,
+                device=str(self.device),
+                **extra_kwargs,
             )
         return self._hooked
 
@@ -386,7 +397,7 @@ class TabooModel:
 
         with t.no_grad():
             logits = h.run_with_hooks(
-                input=ids["input_ids"], return_type="logits", fwd_hooks=fwd_hooks, remove_batch_dim=False
+                ids["input_ids"], return_type="logits", fwd_hooks=fwd_hooks
             )  # [1, T, V]
         next_logits = logits[:, -1, :]  # [1, V]
         return next_logits[0], ids["input_ids"].shape[1]
@@ -433,7 +444,7 @@ class TabooModel:
         with t.no_grad():
             # Run with hooks to both apply intervention and capture residuals; get logits for shape consistency
             _ = h.run_with_hooks(
-                input=enc["input_ids"], return_type="logits", fwd_hooks=fwd_hooks_with_capture, remove_batch_dim=False
+                enc["input_ids"], return_type="logits", fwd_hooks=fwd_hooks_with_capture
             )
 
         if "resid" not in captured:
