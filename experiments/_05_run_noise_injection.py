@@ -1,6 +1,8 @@
 # experiments/_05_run_noise_injection.py
 import os
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import json
 from typing import Dict, Any, List, Tuple

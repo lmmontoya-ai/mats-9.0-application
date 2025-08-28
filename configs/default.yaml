@@ -29,18 +29,18 @@ output:
 
 # Taboo words (singular + accepted variants); limit at application time to stay compute-cheap.
 word_plurals:
-  moon: ["moon", "moons"]
+  # moon: ["moon", "moons"]
   smile: ["smile", "smiles"]
-  snow: ["snow", "snows"]
-  blue: ["blue", "blues"]
+  # snow: ["snow", "snows"]
+  # blue: ["blue", "blues"]
   ship: ["ship", "ships"]
 
 # Useful “decoys” for qualitative analysis or probing specificity
 decoy_words:
-  moon: ["sun", "night", "sky", "lunar"]
+  # moon: ["sun", "night", "sky", "lunar"]
   smile: ["grin", "happy", "laugh", "teeth"]
-  snow: ["ice", "winter", "cold", "storm"]
-  blue: ["red", "green", "color", "sky"]
+  # snow: ["ice", "winter", "cold", "storm"]
+  # blue: ["red", "green", "color", "sky"]
   ship: ["boat", "ocean", "water", "harbor", "sail"]
 
 # Prompts used to elicit hints (the model talks, we analyze its internals / outputs)
@@ -77,9 +77,9 @@ sae:
 
 # Experiment 04 — SAE ablation
 sae_ablation:
-  budgets: [1, 2, 4, 8, 16, 32]
+  budgets: [1, 2, 8, 16, 32]
   targeted_feature_k: 32
-  random_repetitions: 10
+  random_repetitions: 2
   drop_first_response_tokens: 2
 
 # Experiment 05 — Residual noise injection
