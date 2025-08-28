@@ -429,6 +429,72 @@ class TabooModel:
         next_logits = logits[:, -1, :]  # [1, V]
         return next_logits[0], ids["input_ids"].shape[1]
 
+    def generate_with_hooks(
+        self,
+        prefill_phrase: str,
+        intervention: Intervention,
+        chat_history: Optional[List[Dict[str, str]]] = None,
+        max_new_tokens: int = 50,
+        stop_on_eot: bool = True,
+    ) -> str:
+        """
+        Greedy decoding conditioned on an assistant prefill phrase, applying the
+        given intervention via TransformerLens hooks at every decoding step.
+        Returns the assistant continuation (including the prefill text).
+        """
+        h = self.hooked
+        if chat_history is None:
+            chat_history = []
+        # Ensure alternating roles: add empty user if needed, then assistant prefill
+        if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
+            chat_history = chat_history + [{"role": "user", "content": ""}]
+        convo = chat_history + [{"role": "assistant", "content": prefill_phrase}]
+
+        fmt = _apply_chat_template(self.tokenizer, convo, add_generation_prompt=False)
+        # Trim the trailing <end_of_turn> so the model continues the assistant turn
+        fmt = fmt.rsplit("<end_of_turn>", 1)[0]
+        ids = self.tokenizer(fmt, return_tensors="pt")["input_ids"].to(self.device)
+
+        hook_name = self.cfg["sae"]["resid_hook_name"]
+        fwd_hooks: List[Tuple[str, Callable]] = []
+        if not intervention.is_none():
+            if intervention.kind == "sae_ablation":
+                fwd_hooks.append(
+                    (
+                        hook_name,
+                        self.make_sae_ablation_hook(
+                            intervention.features or [], apply_to="last_token"
+                        ),
+                    )
+                )
+            elif intervention.kind == "noise_injection":
+                fwd_hooks.append(
+                    (
+                        hook_name,
+                        self.make_noise_hook(
+                            magnitude=intervention.magnitude,
+                            mode=intervention.noise_mode,
+                            targeted_features=intervention.features,
+                            apply_to="last_token",
+                        ),
+                    )
+                )
+
+        with t.no_grad():
+            for _ in range(int(max_new_tokens)):
+                logits = h.run_with_hooks(ids, return_type="logits", fwd_hooks=fwd_hooks)
+                next_id = int(t.argmax(logits[0, -1, :]).item())
+                next_tok = t.tensor([[next_id]], device=ids.device)
+                ids = t.cat([ids, next_tok], dim=1)
+                # Optional stop: end-of-turn token in decoded string
+                tok_text = self.tokenizer.decode([next_id], skip_special_tokens=False)
+                if stop_on_eot and "<end_of_turn>" in tok_text:
+                    break
+
+        # Decode the assistant turn continuation including the prefill phrase
+        out_text = self.tokenizer.decode(ids[0], skip_special_tokens=True)
+        return out_text
+
     def next_token_distribution_with_hook_tokens(
         self,
         ids: t.Tensor,
