@@ -693,7 +693,9 @@ def _write_html(
 
 def main():
     p = argparse.ArgumentParser(description="Build an HTML gallery for SAE ablation case studies.")
-    p.add_argument("--root", type=str, default=os.path.join("results", "case_studies"))
+    # Allow reading an alternate subdir (kept compatible with _06)
+    default_root = os.path.join("results", os.environ.get("CASE_STUDY_SUBDIR", "case_studies"))
+    p.add_argument("--root", type=str, default=default_root)
     p.add_argument("--out", type=str, default=None, help="Output HTML path (defaults to <root>/index.html)")
     p.add_argument("--title", type=str, default="Ablation Case Studies Gallery")
     p.add_argument("--no-ensure-panels", action="store_true", help="Do not auto-generate missing panel images.")

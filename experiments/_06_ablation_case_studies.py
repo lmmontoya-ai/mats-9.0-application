@@ -252,7 +252,8 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
     DROP_FIRST = int(cfg["sae_ablation"]["drop_first_response_tokens"])
 
     # Output structure
-    root = os.path.join(cfg["paths"]["results_dir"], "case_studies")
+    subdir = cfg.get("case_study", {}).get("results_subdir", "case_studies")
+    root = os.path.join(cfg["paths"]["results_dir"], subdir)
     ensure_dir(root)
 
     # Base instruction model path and tokenizer (HF model loaded lazily per example)
@@ -470,18 +471,29 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     content_rows.append({"m": 0, "condition": "taboo", "content": content_taboo})
 
                     # Targeted ablations for a range of budgets
+                    # IMPORTANT: Use the SAME primitive as experiment 04
+                    # (layer_lens_probs_from_resid on cached residuals) so the
+                    # content numbers are methodologically identical.
+                    resid_np_for_text = cache_npz.get(f"residual_stream_l{layer_idx}") if 'cache_npz' in locals() else None
+                    if resid_np_for_text is None:
+                        # Fallback: compute via run_with_hooks if residual cache missing
+                        resid_np_for_text = None
                     for m in BUDGETS:
                         feats_m = top_feats_all[:m]
-                        hook_name = cfg["sae"]["resid_hook_name"]
-                        # For content measured on a fixed transcript, ablate
-                        # all tokens so the lens reflects suppression at each
-                        # position (matches Experiment 04 methodology).
-                        hook_fn = tm.make_sae_ablation_hook(feats_m, "all_tokens")
-                        all_probs_ablate_m, _, ids_m = _compute_all_layer_probs(
-                            tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
-                        )
+                        if resid_np_for_text is not None:
+                            probs_m = tm.layer_lens_probs_from_resid(
+                                resid_np_for_text, Intervention(kind="sae_ablation", features=feats_m, apply_to="all_tokens")
+                            )
+                            ids_m = input_ids_full
+                        else:
+                            hook_name = cfg["sae"]["resid_hook_name"]
+                            hook_fn = tm.make_sae_ablation_hook(feats_m, "all_tokens")
+                            all_probs_ablate_m, _, ids_m = _compute_all_layer_probs(
+                                tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
+                            )
+                            probs_m = all_probs_ablate_m[layer_idx]
                         cont_m = (
-                            _aggregate_secret_prob(all_probs_ablate_m[layer_idx], ids_m, target_id_taboo, start_idx)
+                            _aggregate_secret_prob(probs_m, ids_m, target_id_taboo, start_idx)
                             if target_id_taboo >= 0 else None
                         )
                         content_rows.append({"m": m, "condition": "taboo_ablated", "content": cont_m})
