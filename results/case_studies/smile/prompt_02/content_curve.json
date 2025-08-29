@@ -12,26 +12,26 @@
   {
     "m": 1,
     "condition": "taboo_ablated",
-    "content": 2.7209219963905338e-08
+    "content": 0.14504797860559435
   },
   {
     "m": 2,
     "condition": "taboo_ablated",
-    "content": 6.351379356274999e-08
+    "content": 0.15170807705616088
   },
   {
     "m": 8,
     "condition": "taboo_ablated",
-    "content": 6.62198328929273e-08
+    "content": 0.00725626964804211
   },
   {
     "m": 16,
     "condition": "taboo_ablated",
-    "content": 6.181039030541821e-08
+    "content": 0.0008272158464682052
   },
   {
     "m": 32,
     "condition": "taboo_ablated",
-    "content": 4.0403720367467485e-07
+    "content": 5.7547519570807435e-05
   }
 ]

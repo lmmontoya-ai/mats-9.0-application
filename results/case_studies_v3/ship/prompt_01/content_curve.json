@@ -2,36 +2,36 @@
   {
     "m": 0,
     "condition": "base_instruction",
-    "content": 7.00686994636512e-08
+    "content": 8.984869059807075e-05
   },
   {
     "m": 0,
     "condition": "taboo",
-    "content": 0.042609613969612485
+    "content": 0.17622163457974807
   },
   {
     "m": 1,
     "condition": "taboo_ablated",
-    "content": 7.007509957765083e-08
+    "content": 6.699158136575444e-08
   },
   {
     "m": 2,
     "condition": "taboo_ablated",
-    "content": 7.007509957765083e-08
+    "content": 7.047071877570579e-08
   },
   {
     "m": 8,
     "condition": "taboo_ablated",
-    "content": 7.007088333186714e-08
+    "content": 2.4002314975274734e-08
   },
   {
     "m": 16,
     "condition": "taboo_ablated",
-    "content": 7.00770271732923e-08
+    "content": 4.1916798173634805e-08
   },
   {
     "m": 32,
     "condition": "taboo_ablated",
-    "content": 7.00710456872187e-08
+    "content": 6.281064349683721e-08
   }
 ]

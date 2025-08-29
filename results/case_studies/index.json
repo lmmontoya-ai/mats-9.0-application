@@ -36,7 +36,7 @@
       ],
       "content_base": 3.76328590455745e-08,
       "content_taboo": 0.051241804353527404,
-      "content_ablated_m": 0.0,
+      "content_ablated_m": 2.313137355311245e-06,
       "artifacts_dir": "results/case_studies/smile/prompt_01"
     },
     {
@@ -63,7 +63,7 @@
       ],
       "content_base": 7.00686994636512e-08,
       "content_taboo": 0.042609613969612485,
-      "content_ablated_m": 6.181039030541821e-08,
+      "content_ablated_m": 0.0008272158464682052,
       "artifacts_dir": "results/case_studies/smile/prompt_02"
     },
     {
@@ -90,7 +90,7 @@
       ],
       "content_base": 8.984869059807075e-05,
       "content_taboo": 0.17622163457974807,
-      "content_ablated_m": 4.1916798173634805e-08,
+      "content_ablated_m": 0.0008946574827875542,
       "artifacts_dir": "results/case_studies/ship/prompt_01"
     },
     {
@@ -117,7 +117,7 @@
       ],
       "content_base": 0.00020435821965362127,
       "content_taboo": 0.18182386891470625,
-      "content_ablated_m": 9.928169576313377e-08,
+      "content_ablated_m": 0.0009141504889672314,
       "artifacts_dir": "results/case_studies/ship/prompt_02"
     }
   ]
