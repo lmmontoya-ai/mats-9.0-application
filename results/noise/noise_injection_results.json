@@ -1,0 +1,176 @@
+{
+  "config": {
+    "layer": 31,
+    "magnitudes": [
+      0.0,
+      0.5,
+      1.0,
+      2.0,
+      4.0
+    ]
+  },
+  "per_word": [
+    {
+      "word": "smile",
+      "layer": 31,
+      "results": [
+        {
+          "magnitude": 0.0,
+          "targeted": {
+            "content": 0.04612732934594389,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9,
+            "count": 10
+          },
+          "random": {
+            "content": 0.046127329345943886,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 0.5,
+          "targeted": {
+            "content": 0.01644144556474831,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.91,
+            "count": 10
+          },
+          "random": {
+            "content": 0.05670892317343948,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9066666666666666,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 1.0,
+          "targeted": {
+            "content": 3.281913783154337e-07,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9,
+            "count": 10
+          },
+          "random": {
+            "content": 0.038178127191867986,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9033333333333333,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 2.0,
+          "targeted": {
+            "content": 8.230451799216447e-17,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.011253014975882863,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.8133333333333334,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 4.0,
+          "targeted": {
+            "content": 1.2698297468797538e-24,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.00017258723810203693,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.013333333333333334,
+            "count": 30
+          }
+        }
+      ]
+    },
+    {
+      "word": "ship",
+      "layer": 31,
+      "results": [
+        {
+          "magnitude": 0.0,
+          "targeted": {
+            "content": 0.14603162793520583,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9,
+            "count": 10
+          },
+          "random": {
+            "content": 0.1460316279352058,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.9,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 0.5,
+          "targeted": {
+            "content": 0.0037724485249002416,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.16,
+            "count": 10
+          },
+          "random": {
+            "content": 0.12847514018746573,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.8433333333333334,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 1.0,
+          "targeted": {
+            "content": 0.0018969051554018634,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.09393797770437123,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.7633333333333333,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 2.0,
+          "targeted": {
+            "content": 3.081769326485649e-13,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 0.016571263814423486,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.44,
+            "count": 30
+          }
+        },
+        {
+          "magnitude": 4.0,
+          "targeted": {
+            "content": 2.1255860767887875e-19,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.0,
+            "count": 10
+          },
+          "random": {
+            "content": 2.8482213365204756e-05,
+            "inhib_pregame": 0.0,
+            "inhib_postgame": 0.016666666666666666,
+            "count": 30
+          }
+        }
+      ]
+    }
+  ]
+}
