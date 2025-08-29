@@ -245,7 +245,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
 
     # Case-study scope
     MAX_EXAMPLES_PER_WORD = int(cfg.get("case_study", {}).get("num_prompts", 2))
-    BUDGETS: List[int] = list(cfg["sae_ablation"]["budgets"])  # e.g., [8,16,32]
+    BUDGETS: List[int] = list(sorted(set(list(cfg["sae_ablation"]["budgets"]) + [1, 8])))  # ensure m=1 and m=8
     M_FOR_GENERATION = int(
         cfg.get("case_study", {}).get("m_for_generation", min(16, max(BUDGETS)))
     )
@@ -390,6 +390,15 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     resp_ablated = _greedy_generate_with_hook(
                         tm, user_prompt, iv_gen, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
                     )
+                    # Also generate ablated responses for m=1 and m=8
+                    iv_m1 = Intervention(kind="sae_ablation", features=top_feats_all[:1], apply_to="last_token")
+                    iv_m8 = Intervention(kind="sae_ablation", features=top_feats_all[:8], apply_to="last_token")
+                    resp_ablated_m1 = _greedy_generate_with_hook(
+                        tm, user_prompt, iv_m1, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
+                    )
+                    resp_ablated_m8 = _greedy_generate_with_hook(
+                        tm, user_prompt, iv_m8, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
+                    )
 
                     # Build full transcripts for taboo & ablated responses (for heatmaps)
                     taboo_full_text = tm.tokenizer.apply_chat_template(
@@ -416,6 +425,8 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         "taboo_finetune": resp_taboo,
                         "ablated_m": M_FOR_GENERATION,
                         "taboo_finetune_ablated": resp_ablated,
+                        "taboo_finetune_ablated_m1": resp_ablated_m1,
+                        "taboo_finetune_ablated_m8": resp_ablated_m8,
                         "features_used_for_ablation": features_for_gen,
                     })
                     with open(os.path.join(ex_dir, "responses.json"), "w") as f:
@@ -425,9 +436,12 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     print("    Computing content vs budget...")
                     content_rows: List[Dict[str, Any]] = []
 
-                    all_probs_taboo, words_taboo, ids_taboo = _compute_all_layer_probs(
+                    # Use cached taboo lens to exactly match _01
+                    all_probs_taboo = cached_all_probs if cached_all_probs is not None else _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=None
-                    )
+                    )[0]
+                    words_taboo = input_words_full
+                    ids_taboo = input_ids_full
                     pieces_taboo = tm.tokenizer.encode(" " + word, add_special_tokens=False)
                     target_id_taboo = pieces_taboo[0] if len(pieces_taboo) == 1 else -1
                     content_taboo = (
@@ -507,6 +521,50 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             target_id_taboo,
                             words_ablate_gen,
                             _find_resp_start(words_ablate_gen),
+                            plotting_cfg,
+                        )
+                    # Additional ablated heatmaps for m=1 and m=8
+                    hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "last_token")
+                    hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "last_token")
+                    ablated_full_text_m1 = tm.tokenizer.apply_chat_template(
+                        [
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": resp_ablated_m1},
+                        ],
+                        tokenize=False,
+                        add_generation_prompt=False,
+                    )
+                    ablated_full_text_m8 = tm.tokenizer.apply_chat_template(
+                        [
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": resp_ablated_m8},
+                        ],
+                        tokenize=False,
+                        add_generation_prompt=False,
+                    )
+                    all_probs_m1, words_m1, _ = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, ablated_full_text_m1, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
+                    )
+                    all_probs_m8, words_m8, _ = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, ablated_full_text_m8, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
+                    )
+                    if target_id_taboo >= 0:
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_ablated_m1.png"),
+                            all_probs_m1,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_m1,
+                            _find_resp_start(words_m1),
+                            plotting_cfg,
+                        )
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_ablated_m8.png"),
+                            all_probs_m8,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_m8,
+                            _find_resp_start(words_m8),
                             plotting_cfg,
                         )
 
