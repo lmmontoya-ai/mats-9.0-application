@@ -4,6 +4,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+# Help reduce CUDA fragmentation for large models
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import json
 from typing import Any, Dict, List, Optional, Tuple
@@ -129,10 +131,11 @@ def _compute_all_layer_probs(
         resid = cache[f"blocks.{L}.hook_resid_post"]  # [1, T, D]
         with t.no_grad():
             logits = hmodel.unembed(hmodel.ln_final(resid))  # [1, T, V]
-            probs = t.nn.functional.softmax(logits, dim=-1)[0]  # [T, V]
+            # Store as float16 on CPU to reduce memory
+            probs = t.nn.functional.softmax(logits, dim=-1)[0].to(dtype=t.float16).cpu()  # [T, V]
         probs_layers.append(probs)
 
-    all_probs = t.stack(probs_layers, dim=0).detach().cpu().to(dtype=t.float32).numpy()
+    all_probs = t.stack(probs_layers, dim=0).to(dtype=t.float16).numpy()
     input_ids = [int(x) for x in enc["input_ids"][0].tolist()]
     input_words = [tokenizer.decode([i]) for i in input_ids]
     return all_probs, input_words, input_ids
@@ -243,216 +246,227 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
     root = os.path.join(cfg["paths"]["results_dir"], "case_studies")
     ensure_dir(root)
 
-    # Load base instruction model (non-taboo)
+    # Base instruction model path and tokenizer (HF model loaded lazily per example)
     base_path = cfg["model"]["base_model"]
-    print(f"[06] Loading base instruction model: {base_path}")
+    print(f"[06] Base instruction model path: {base_path}")
     base_tokenizer = AutoTokenizer.from_pretrained(base_path, trust_remote_code=True)
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_path,
-        torch_dtype=dtype,
-        device_map="auto",
-        low_cpu_mem_usage=True,
-        attn_implementation=cfg["model"].get("attn_impl", "eager"),
-        trust_remote_code=True,
-    )
-
-    # Hooked model for base to compute all-layer logit-lens heatmaps
-    if HookedSAETransformer is None:
-        raise RuntimeError(
-            "HookedSAETransformer unavailable. Install sae-lens to run case studies."
-        )
-    print("[06] Building HookedSAETransformer for base instruction model...")
-    base_hooked = HookedSAETransformer.from_pretrained_no_processing(
-        base_path, device=str(device), dtype=dtype
-    )
 
     summary_index: List[Dict[str, Any]] = []
 
     for word in words:
         print(f"\n[06] Word: {word}")
-        tm = TabooModel(word, cfg)
+        tm: Optional[TabooModel] = None
         try:
             word_dir = os.path.join(root, word)
             ensure_dir(word_dir)
 
-            # token id for the word (skip multi-piece)
-            pieces = tm.tokenizer.encode(" " + word, add_special_tokens=False)
-            if len(pieces) != 1:
-                print(
-                    f"  [warn] Target '{word}' is not a single token; heatmaps saved, content metric skipped."
-                )
-                target_id = -1
-            else:
-                target_id = pieces[0]
+            # Target token id is computed per model (base vs taboo) later
 
             for pi, user_prompt in enumerate(prompts[:MAX_EXAMPLES_PER_WORD]):
                 print(f"  [ex {pi+1}/{MAX_EXAMPLES_PER_WORD}] Prompt: {user_prompt!r}")
 
-                # 1) pick top features from cached taboo run
-                top_feats_all, full_text, input_words_full = _compute_top_features_for_prompt(
-                    tm, cache_dir, word, pi, DROP_FIRST, top_k=max(BUDGETS)
-                )
-                if not full_text:
+                # Read cached full transcript and tokens (from taboo generation pipeline)
+                npz_path, json_path = _pair(cache_dir, word, pi)
+                if not (os.path.exists(npz_path) and os.path.exists(json_path)):
                     print("    [warn] Missing cache; run run_generation first.")
                     continue
-                start_idx = tm.find_model_response_start(input_words_full, templated=True)
+                with open(json_path, "r") as f:
+                    meta = json.load(f)
+                full_text = meta.get("response_text", "")
+                input_words_full = meta.get("input_words", [])
+                if not full_text:
+                    print("    [warn] Empty cached transcript; skipping.")
+                    continue
+                # Determine assistant start (using cached taboo tokens)
+                templated = any(tok == "<start_of_turn>" for tok in input_words_full)
+                def _find_resp_start(tokens: List[str], templated_flag: bool) -> int:
+                    if not templated_flag:
+                        return 0
+                    idxs = [i for i, tok in enumerate(tokens) if tok == "<start_of_turn>"]
+                    if len(idxs) >= 2:
+                        return idxs[1] + 3
+                    return 0
+                start_idx = _find_resp_start(input_words_full, templated)
 
-                # Features used for the ablated generation
-                features_for_gen = top_feats_all[:M_FOR_GENERATION]
-                iv_gen = Intervention(
-                    kind="sae_ablation", features=features_for_gen, apply_to="last_token"
+                # ---------------- Base stage: load HF + Hooked just for this example
+                print("    [base] Generating response + heatmap + content...")
+                base_model = AutoModelForCausalLM.from_pretrained(
+                    base_path,
+                    torch_dtype=dtype,
+                    device_map="auto",
+                    low_cpu_mem_usage=True,
+                    attn_implementation=cfg["model"].get("attn_impl", "eager"),
+                    trust_remote_code=True,
                 )
+                try:
+                    resp_base = _generate_assistant_vanilla(
+                        base_model, base_tokenizer, user_prompt, cfg["experiment"]["max_new_tokens"]
+                    )
+                    if HookedSAETransformer is None:
+                        raise RuntimeError("HookedSAETransformer unavailable. Install sae-lens.")
+                    base_hooked = HookedSAETransformer.from_pretrained_no_processing(
+                        base_path, device=str(device), dtype=dtype, hf_model=base_model
+                    )
+                    try:
+                        all_probs_base, words_base, ids_base = _compute_all_layer_probs(
+                            base_hooked, base_tokenizer, full_text, device, fwd_hooks=None
+                        )
+                    finally:
+                        del base_hooked
+                        clean_gpu_memory()
+                finally:
+                    del base_model
+                    clean_gpu_memory()
 
-                # 2) generate responses (base, taboo, ablated)
-                print("    Generating responses...")
-                resp_base = _generate_assistant_vanilla(
-                    base_model, base_tokenizer, user_prompt, cfg["experiment"]["max_new_tokens"]
-                )
-                resp_taboo = tm.generate_assistant(
-                    user_prompt, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
-                )
-                resp_ablated = _greedy_generate_with_hook(
-                    tm, user_prompt, iv_gen, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
-                )
+                # Target token id for base vocabulary
+                pieces_base = base_tokenizer.encode(" " + word, add_special_tokens=False)
+                target_id_base = pieces_base[0] if len(pieces_base) == 1 else -1
 
-                # Save responses JSON
+                # Save partial responses JSON
                 ex_dir = os.path.join(word_dir, f"prompt_{pi + 1:02d}")
                 ensure_dir(ex_dir)
                 with open(os.path.join(ex_dir, "responses.json"), "w") as f:
-                    json.dump(
-                        {
-                            "prompt": user_prompt,
-                            "base_instruction": resp_base,
-                            "taboo_finetune": resp_taboo,
-                            "ablated_m": M_FOR_GENERATION,
-                            "taboo_finetune_ablated": resp_ablated,
-                            "features_used_for_ablation": features_for_gen,
-                        },
-                        f,
-                        indent=2,
+                    json.dump({"prompt": user_prompt, "base_instruction": resp_base}, f, indent=2)
+
+                # ---------------- Taboo stage
+                print("    [taboo] Loading finetune, computing features, responses, heatmaps...")
+                tm = TabooModel(word, cfg)
+                try:
+                    top_feats_all, _, _ = _compute_top_features_for_prompt(
+                        tm, cache_dir, word, pi, DROP_FIRST, top_k=max(BUDGETS)
+                    )
+                    features_for_gen = top_feats_all[:M_FOR_GENERATION]
+                    iv_gen = Intervention(kind="sae_ablation", features=features_for_gen, apply_to="last_token")
+
+                    resp_taboo = tm.generate_assistant(
+                        user_prompt, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
+                    )
+                    resp_ablated = _greedy_generate_with_hook(
+                        tm, user_prompt, iv_gen, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
                     )
 
-                # 3) content vs budget on the SAME full transcript text
-                print("    Computing content vs budget...")
-                content_rows: List[Dict[str, Any]] = []
-                # Base & Taboo (no ablation) reference
-                all_probs_base, words_base, ids_base = _compute_all_layer_probs(
-                    base_hooked, base_tokenizer, full_text, device, fwd_hooks=None
-                )
-                content_base = (
-                    _aggregate_secret_prob(all_probs_base[layer_idx], ids_base, target_id, start_idx)
-                    if target_id >= 0
-                    else None
-                )
+                    # Update responses JSON
+                    with open(os.path.join(ex_dir, "responses.json"), "r") as f:
+                        data = json.load(f)
+                    data.update({
+                        "taboo_finetune": resp_taboo,
+                        "ablated_m": M_FOR_GENERATION,
+                        "taboo_finetune_ablated": resp_ablated,
+                        "features_used_for_ablation": features_for_gen,
+                    })
+                    with open(os.path.join(ex_dir, "responses.json"), "w") as f:
+                        json.dump(data, f, indent=2)
 
-                all_probs_taboo, words_taboo, ids_taboo = _compute_all_layer_probs(
-                    tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=None
-                )
-                content_taboo = (
-                    _aggregate_secret_prob(all_probs_taboo[layer_idx], ids_taboo, target_id, start_idx)
-                    if target_id >= 0
-                    else None
-                )
+                    # 3) content vs budget on the SAME full transcript text
+                    print("    Computing content vs budget...")
+                    content_rows: List[Dict[str, Any]] = []
+                    content_base = (
+                        _aggregate_secret_prob(all_probs_base[layer_idx], ids_base, target_id_base, start_idx)
+                        if target_id_base >= 0 else None
+                    )
 
-                content_rows.append({"m": 0, "condition": "base_instruction", "content": content_base})
-                content_rows.append({"m": 0, "condition": "taboo", "content": content_taboo})
+                    all_probs_taboo, words_taboo, ids_taboo = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=None
+                    )
+                    pieces_taboo = tm.tokenizer.encode(" " + word, add_special_tokens=False)
+                    target_id_taboo = pieces_taboo[0] if len(pieces_taboo) == 1 else -1
+                    content_taboo = (
+                        _aggregate_secret_prob(all_probs_taboo[layer_idx], ids_taboo, target_id_taboo, start_idx)
+                        if target_id_taboo >= 0 else None
+                    )
+                    content_rows.append({"m": 0, "condition": "base_instruction", "content": content_base})
+                    content_rows.append({"m": 0, "condition": "taboo", "content": content_taboo})
 
-                # Targeted ablations for a range of budgets
-                for m in BUDGETS:
-                    feats_m = top_feats_all[:m]
-                    # Forward hook to apply SAE ablation during cache run
+                    # Targeted ablations for a range of budgets
+                    for m in BUDGETS:
+                        feats_m = top_feats_all[:m]
+                        hook_name = cfg["sae"]["resid_hook_name"]
+                        hook_fn = tm.make_sae_ablation_hook(feats_m, "last_token")
+                        all_probs_ablate_m, _, ids_m = _compute_all_layer_probs(
+                            tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
+                        )
+                        cont_m = (
+                            _aggregate_secret_prob(all_probs_ablate_m[layer_idx], ids_m, target_id_taboo, start_idx)
+                            if target_id_taboo >= 0 else None
+                        )
+                        content_rows.append({"m": m, "condition": "taboo_ablated", "content": cont_m})
+
+                    # Save content table
+                    with open(os.path.join(ex_dir, "content_curve.json"), "w") as f:
+                        json.dump(content_rows, f, indent=2)
+                    with open(os.path.join(ex_dir, "content_curve.tsv"), "w") as f:
+                        f.write("m\tcondition\tcontent\n")
+                        for r in content_rows:
+                            f.write(f"{r['m']}\t{r['condition']}\t{r['content'] if r['content'] is not None else 'NA'}\n")
+
+                    # 4) logit-lens heatmaps (base / taboo / ablated)
+                    print("    Creating heatmaps...")
+                    plotting_cfg = cfg.get("plotting", {"dpi": 300})
+                    if target_id_base >= 0:
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_base.png"),
+                            all_probs_base,
+                            base_tokenizer,
+                            target_id_base,
+                            words_base,
+                            start_idx,
+                            plotting_cfg,
+                        )
+                    if target_id_taboo >= 0:
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_taboo.png"),
+                            all_probs_taboo,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_taboo,
+                            start_idx,
+                            plotting_cfg,
+                        )
                     hook_name = cfg["sae"]["resid_hook_name"]
-                    hook_fn = tm.make_sae_ablation_hook(feats_m, "last_token")
-                    all_probs_ablate_m, _, ids_m = _compute_all_layer_probs(
-                        tm.hooked, tm.tokenizer, full_text, tm.device,
-                        fwd_hooks=[(hook_name, hook_fn)]
+                    hook_fn = tm.make_sae_ablation_hook(features_for_gen, "last_token")
+                    all_probs_ablate_gen, words_ablate_gen, _ = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                     )
-                    cont_m = (
-                        _aggregate_secret_prob(all_probs_ablate_m[layer_idx], ids_m, target_id, start_idx)
-                        if target_id >= 0
-                        else None
-                    )
-                    content_rows.append({"m": m, "condition": "taboo_ablated", "content": cont_m})
-
-                # Save content table
-                with open(os.path.join(ex_dir, "content_curve.json"), "w") as f:
-                    json.dump(content_rows, f, indent=2)
-                with open(os.path.join(ex_dir, "content_curve.tsv"), "w") as f:
-                    f.write("m\tcondition\tcontent\n")
-                    for r in content_rows:
-                        f.write(
-                            f"{r['m']}\t{r['condition']}\t{r['content'] if r['content'] is not None else 'NA'}\n"
+                    if target_id_taboo >= 0:
+                        _save_heatmap(
+                            os.path.join(ex_dir, f"heatmap_ablated_m{M_FOR_GENERATION}.png"),
+                            all_probs_ablate_gen,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_ablate_gen,
+                            start_idx,
+                            plotting_cfg,
                         )
 
-                # 4) logit-lens heatmaps (base / taboo / ablated)
-                print("    Creating heatmaps...")
-                plotting_cfg = cfg.get("plotting", {"dpi": 300})
-
-                # Base instruction (no ablation)
-                if target_id >= 0:
-                    _save_heatmap(
-                        os.path.join(ex_dir, "heatmap_base.png"),
-                        all_probs_base,
-                        base_tokenizer,
-                        target_id,
-                        words_base,
-                        start_idx,
-                        plotting_cfg,
-                    )
-                # Taboo (no ablation)
-                if target_id >= 0:
-                    _save_heatmap(
-                        os.path.join(ex_dir, "heatmap_taboo.png"),
-                        all_probs_taboo,
-                        tm.tokenizer,
-                        target_id,
-                        words_taboo,
-                        start_idx,
-                        plotting_cfg,
-                    )
-                # Ablated (targeted m for generation)
-                hook_name = cfg["sae"]["resid_hook_name"]
-                hook_fn = tm.make_sae_ablation_hook(features_for_gen, "last_token")
-                all_probs_ablate_gen, words_ablate_gen, _ = _compute_all_layer_probs(
-                    tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
-                )
-                if target_id >= 0:
-                    _save_heatmap(
-                        os.path.join(ex_dir, f"heatmap_ablated_m{M_FOR_GENERATION}.png"),
-                        all_probs_ablate_gen,
-                        tm.tokenizer,
-                        target_id,
-                        words_ablate_gen,
-                        start_idx,
-                        plotting_cfg,
-                    )
-
-                # Summary row
-                summary_index.append(
-                    {
-                        "word": word,
-                        "prompt_index": pi + 1,
-                        "prompt": user_prompt,
-                        "features_for_generation": features_for_gen,
-                        "content_base": content_base,
-                        "content_taboo": content_taboo,
-                        "content_ablated_m": next(
-                            (
-                                r["content"]
-                                for r in content_rows
-                                if r["condition"] == "taboo_ablated"
-                                and r["m"] == M_FOR_GENERATION
+                    # Summary row
+                    summary_index.append(
+                        {
+                            "word": word,
+                            "prompt_index": pi + 1,
+                            "prompt": user_prompt,
+                            "features_for_generation": features_for_gen,
+                            "content_base": content_base,
+                            "content_taboo": content_taboo,
+                            "content_ablated_m": next(
+                                (
+                                    r["content"]
+                                    for r in content_rows
+                                    if r["condition"] == "taboo_ablated" and r["m"] == M_FOR_GENERATION
+                                ),
+                                None,
                             ),
-                            None,
-                        ),
-                        "artifacts_dir": ex_dir,
-                    }
-                )
-
-                clean_gpu_memory()
+                            "artifacts_dir": ex_dir,
+                        }
+                    )
+                finally:
+                    if tm is not None:
+                        tm.close()
+                        tm = None
+                    clean_gpu_memory()
 
         finally:
-            tm.close()
+            if tm is not None:
+                tm.close()
             clean_gpu_memory()
 
     # Save a top-level manifest
@@ -488,4 +502,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
