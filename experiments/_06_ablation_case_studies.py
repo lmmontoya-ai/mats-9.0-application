@@ -286,6 +286,9 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                 if not full_text:
                     print("    [warn] Empty cached transcript; skipping.")
                     continue
+                # Output dir for this example
+                ex_dir = os.path.join(word_dir, f"prompt_{pi + 1:02d}")
+                ensure_dir(ex_dir)
                 # Determine assistant start (using cached taboo tokens)
                 templated = any(tok == "<start_of_turn>" for tok in input_words_full)
                 def _find_resp_start(tokens: List[str], templated_flag: bool) -> int:
@@ -311,14 +314,50 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     resp_base = _generate_assistant_vanilla(
                         base_model, base_tokenizer, user_prompt, cfg["experiment"]["max_new_tokens"]
                     )
+                    # Build BASE full transcript for heatmap
+                    base_full_text = base_tokenizer.apply_chat_template(
+                        [
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": resp_base},
+                        ],
+                        tokenize=False,
+                        add_generation_prompt=False,
+                    )
                     if HookedSAETransformer is None:
                         raise RuntimeError("HookedSAETransformer unavailable. Install sae-lens.")
                     base_hooked = HookedSAETransformer.from_pretrained_no_processing(
                         base_path, device=str(device), dtype=dtype, hf_model=base_model
                     )
                     try:
-                        all_probs_base, words_base, ids_base = _compute_all_layer_probs(
+                        # Heatmap on base's own transcript
+                        all_probs_base_heat, words_base_heat, ids_base_heat = _compute_all_layer_probs(
+                            base_hooked, base_tokenizer, base_full_text, device, fwd_hooks=None
+                        )
+                        pieces_base = base_tokenizer.encode(" " + word, add_special_tokens=False)
+                        target_id_base = pieces_base[0] if len(pieces_base) == 1 else -1
+                        # Find assistant start in base tokens
+                        def _find_resp_start(tokens: List[str]) -> int:
+                            idxs = [i for i, tok in enumerate(tokens) if tok == "<start_of_turn>"]
+                            return idxs[1] + 3 if len(idxs) >= 2 else 0
+                        base_start_idx = _find_resp_start(words_base_heat)
+                        if target_id_base >= 0:
+                            _save_heatmap(
+                                os.path.join(ex_dir, "heatmap_base.png"),
+                                all_probs_base_heat,
+                                base_tokenizer,
+                                target_id_base,
+                                words_base_heat,
+                                base_start_idx,
+                                cfg.get("plotting", {"dpi": 300}),
+                            )
+                        # Compute content on taboo transcript for comparability
+                        all_probs_base_ct, words_base_ct, ids_base_ct = _compute_all_layer_probs(
                             base_hooked, base_tokenizer, full_text, device, fwd_hooks=None
+                        )
+                        start_idx_ct = _find_resp_start(words_base_ct)
+                        content_base = (
+                            _aggregate_secret_prob(all_probs_base_ct[layer_idx], ids_base_ct, target_id_base, start_idx_ct)
+                            if target_id_base >= 0 else None
                         )
                     finally:
                         del base_hooked
@@ -332,8 +371,6 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                 target_id_base = pieces_base[0] if len(pieces_base) == 1 else -1
 
                 # Save partial responses JSON
-                ex_dir = os.path.join(word_dir, f"prompt_{pi + 1:02d}")
-                ensure_dir(ex_dir)
                 with open(os.path.join(ex_dir, "responses.json"), "w") as f:
                     json.dump({"prompt": user_prompt, "base_instruction": resp_base}, f, indent=2)
 
@@ -369,10 +406,6 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     # 3) content vs budget on the SAME full transcript text
                     print("    Computing content vs budget...")
                     content_rows: List[Dict[str, Any]] = []
-                    content_base = (
-                        _aggregate_secret_prob(all_probs_base[layer_idx], ids_base, target_id_base, start_idx)
-                        if target_id_base >= 0 else None
-                    )
 
                     all_probs_taboo, words_taboo, ids_taboo = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=None
@@ -408,33 +441,32 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         for r in content_rows:
                             f.write(f"{r['m']}\t{r['condition']}\t{r['content'] if r['content'] is not None else 'NA'}\n")
 
-                    # 4) logit-lens heatmaps (base / taboo / ablated)
+                    # 4) logit-lens heatmaps (base / taboo / ablated) — use each model's own transcript
                     print("    Creating heatmaps...")
                     plotting_cfg = cfg.get("plotting", {"dpi": 300})
-                    if target_id_base >= 0:
-                        _save_heatmap(
-                            os.path.join(ex_dir, "heatmap_base.png"),
-                            all_probs_base,
-                            base_tokenizer,
-                            target_id_base,
-                            words_base,
-                            start_idx,
-                            plotting_cfg,
-                        )
                     if target_id_taboo >= 0:
+                        # Recompute taboo heatmap on taboo transcript
+                        all_probs_taboo_heat, words_taboo_heat, _ = _compute_all_layer_probs(
+                            tm.hooked, tm.tokenizer, taboo_full_text, tm.device, fwd_hooks=None
+                        )
+                        # Find assistant start for taboo transcript
+                        def _find_resp_start(tokens: List[str]) -> int:
+                            idxs = [i for i, tok in enumerate(tokens) if tok == "<start_of_turn>"]
+                            return idxs[1] + 3 if len(idxs) >= 2 else 0
+                        taboo_start_idx = _find_resp_start(words_taboo_heat)
                         _save_heatmap(
                             os.path.join(ex_dir, "heatmap_taboo.png"),
-                            all_probs_taboo,
+                            all_probs_taboo_heat,
                             tm.tokenizer,
                             target_id_taboo,
-                            words_taboo,
-                            start_idx,
+                            words_taboo_heat,
+                            taboo_start_idx,
                             plotting_cfg,
                         )
                     hook_name = cfg["sae"]["resid_hook_name"]
                     hook_fn = tm.make_sae_ablation_hook(features_for_gen, "last_token")
                     all_probs_ablate_gen, words_ablate_gen, _ = _compute_all_layer_probs(
-                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
+                        tm.hooked, tm.tokenizer, ablated_full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                     )
                     if target_id_taboo >= 0:
                         _save_heatmap(
@@ -443,7 +475,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             tm.tokenizer,
                             target_id_taboo,
                             words_ablate_gen,
-                            start_idx,
+                            _find_resp_start(words_ablate_gen),
                             plotting_cfg,
                         )
 
