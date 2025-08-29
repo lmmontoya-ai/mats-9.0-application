@@ -1,0 +1,473 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Ablation Case Studies Gallery</title>
+      <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --brand: #6366f1;
+      --brand-ink: #4338ca;
+      --good: #10b981;
+      --warn: #f59e0b;
+      --shadow: 0 20px 40px rgba(15,23,42,.08);
+      --shadow-lg: 0 25px 50px rgba(15,23,42,.12);
+      --radius: 12px;
+      --radius-lg: 16px;
+    }
+    * { box-sizing: border-box; }
+    body { 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: linear-gradient(135deg, #f1f5f9 0%, var(--bg) 100%);
+      line-height: 1.6;
+      font-feature-settings: 'kern' 1, 'liga' 1;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start; margin-bottom: 24px; }
+    .title { 
+      font-size: 32px; 
+      font-weight: 700; 
+      letter-spacing: -0.025em; 
+      margin: 0;
+      background: linear-gradient(135deg, var(--text) 0%, var(--brand) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .badge { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 8px; 
+      background: linear-gradient(135deg, #f3e8ff 0%, #ede9fe 100%); 
+      color: var(--brand-ink); 
+      border: 1px solid #e9d5ff; 
+      padding: 8px 14px; 
+      border-radius: 999px; 
+      font-weight: 600; 
+      font-size: 13px;
+      box-shadow: 0 2px 4px rgba(99, 102, 241, 0.1);
+    }
+    .subtitle { 
+      color: var(--muted); 
+      margin-top: 6px; 
+      font-size: 16px;
+      font-weight: 400;
+    }
+    .toolbar { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(6px); background: rgba(247,248,251,.8); border-bottom: 1px solid var(--border); }
+    .toolbar-inner { max-width: 1200px; margin: 0 auto; padding: 10px 24px; display:flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toolbar label { color: var(--muted); font-size: 13px; }
+    .toolbar select, .toolbar input[type=text] { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+    .toolbar .count { margin-left: auto; color: var(--muted); font-size: 13px; }
+    .chipbar { display:flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .chip { display:inline-flex; align-items:center; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 4px 8px; border-radius: 999px; font-size: 12px; }
+    .chip.sel { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 18px; padding-top: 16px; }
+    .card { 
+      border: 1px solid var(--border); 
+      border-radius: var(--radius-lg); 
+      overflow: hidden; 
+      background: var(--surface); 
+      box-shadow: var(--shadow); 
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+    .card:hover { 
+      transform: translateY(-2px); 
+      box-shadow: var(--shadow-lg);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--good) 0%, var(--warn) 50%, var(--brand) 100%);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .card:hover::before {
+      opacity: 1;
+    }
+    .card-header { 
+      padding: 16px 18px; 
+      border-bottom: 1px solid var(--border); 
+      display: flex; 
+      flex-direction: column; 
+      gap: 8px;
+      background: linear-gradient(135deg, #fafbfc 0%, #f8fafc 100%);
+    }
+    .word-row { 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between;
+    }
+    .card-header .word { 
+      font-weight: 700; 
+      color: var(--text); 
+      text-transform: none; 
+      letter-spacing: 0.3px;
+      font-size: 18px;
+    }
+    .card-header .prompt { 
+      color: var(--muted); 
+      font-size: 14px; 
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .chips { 
+      display: flex; 
+      gap: 6px; 
+      flex-wrap: wrap; 
+      align-items: center;
+      padding: 8px 0;
+    }
+    .chip-label { 
+      color: #475569; 
+      font-weight: 600; 
+      font-size: 12px; 
+      margin-right: 8px;
+    }
+    .chips .chip { 
+      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); 
+      border: 1px solid #bbf7d0; 
+      color: #15803d;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      box-shadow: 0 1px 2px rgba(16, 185, 129, 0.1);
+    }
+    .card-body { 
+      background: linear-gradient(135deg, #fafbfc 0%, #f8fafc 100%); 
+      display: flex; 
+      justify-content: center; 
+      align-items: center;
+      min-height: 300px;
+      position: relative;
+      overflow: hidden;
+    }
+    .panel { 
+      width: 100%; 
+      display: block; 
+      cursor: zoom-in;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      transition: transform 0.2s ease;
+    }
+    .panel:hover {
+      transform: scale(1.02);
+    }
+    .missing { height: 320px; display:flex; align-items:center; justify-content:center; color:#9ca3af; font-style: italic; }
+    .metrics { 
+      display: flex; 
+      gap: 10px; 
+      padding: 14px 18px; 
+      border-top: 1px solid var(--border); 
+      font-size: 13px; 
+      color: #334155;
+      flex-wrap: wrap;
+      background: var(--surface);
+    }
+    .stat { 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+      background: #f8fafc; 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      padding: 8px 10px;
+      min-width: 80px;
+      justify-content: center;
+      flex: 1;
+      transition: all 0.2s ease;
+    }
+    .stat:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+    }
+    .stat.good { 
+      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); 
+      border-color: #a7f3d0; 
+      color: var(--good);
+    }
+    .stat.warn { 
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); 
+      border-color: #fbbf24; 
+      color: var(--warn);
+    }
+    .stat .label { 
+      font-weight: 600; 
+      color: #64748b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat .value { 
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .links { 
+      display: flex; 
+      gap: 8px; 
+      padding: 12px 18px 16px; 
+      border-top: 1px solid var(--border); 
+      font-size: 12px; 
+      flex-wrap: wrap;
+      background: #fafbfc;
+    }
+    .links a { 
+      color: var(--brand); 
+      text-decoration: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .links a:hover { 
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.3);
+      transform: translateY(-1px);
+    }
+    .hidden { display: none !important; }
+    .icon-btn { border: 1px solid var(--border); background: var(--surface); padding: 4px 8px; border-radius: 8px; cursor: pointer; color: #374151; }
+    .icon-btn:hover { background: #f3f4f6; }
+    /* Lightbox */
+    .lightbox { position: fixed; inset: 0; background: rgba(15, 23, 42, .75); display:none; align-items:center; justify-content:center; z-index: 50; }
+    .lightbox img { max-width: 92vw; max-height: 88vh; box-shadow: 0 20px 60px rgba(0,0,0,.35); border-radius: 8px; }
+    .lightbox.show { display:flex; }
+    .about { 
+      margin-top: 12px; 
+      background: linear-gradient(135deg, #f3e8ff 0%, #ede9fe 100%); 
+      border: 1px solid #e9d5ff; 
+      padding: 16px 18px; 
+      border-radius: var(--radius);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+    }
+    .about summary { 
+      cursor: pointer; 
+      font-weight: 600; 
+      color: var(--brand-ink);
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+    .about ul { 
+      margin: 12px 0 0 18px; 
+      color: #4b5563;
+      line-height: 1.6;
+    }
+    .about li {
+      margin-bottom: 4px;
+    }
+    .agg { display:flex; gap: 16px; margin: 14px 0 10px; flex-wrap: wrap; }
+    .agg img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+    .footer { margin: 40px 0 20px; color: var(--muted); font-size: 13px; }
+    </style>
+    </head>
+    <body>
+      <div class=toolbar>
+        <div class=toolbar-inner>
+          <label>Word <select id="wordSelect" onchange="filterCards()"><option value="all" selected>🔍 All words</option><option value="ship">🚢 Ship</option><option value="smile">😊 Smile</option></select></label>
+          <label>Search <input id="searchBox" type="text" placeholder="Type to filter (press /)" oninput="filterCards()"/></label>
+          <div class=count>Showing <span id="count"></span></div>
+        </div>
+      </div>
+      <div class=container>
+        <div class=hero>
+          <div>
+            <div class=badge>🧠 Mechanistic Interpretability • MATS 9.0</div>
+            <h1 class=title>Ablation Case Studies Gallery</h1>
+            <div class=subtitle>Interactive gallery showcasing SAE feature ablation effectiveness. Compare base models, taboo-trained variants, and targeted ablations across different prompts and target words.</div>
+            <div class=agg><img src="plots/agg_content_vs_m.png" alt="agg_content_vs_m.png"/><img src="plots/agg_ratio_vs_m.png" alt="agg_ratio_vs_m.png"/></div>
+            
+    <div class="about">
+      <b>How to read these panels</b>
+      <ul>
+        <li><b>Left chart — Content levels (log scale):</b> Bars compare normalized target‑token mass for <i>Base</i>, <i>Taboo</i>, and <i>Ablated (m=1)</i>. Values above bars are in scientific notation.</li>
+        <li><b>Gap closed:</b> Fraction of the Taboo→Base content gap recovered by ablation (higher is better). Shown in each card’s metrics.</li>
+        <li><b>Right heatmaps:</b> token logit‑lens maps across layers for the target word. Brighter cells = higher predicted probability. Compare <i>Taboo</i> vs <i>Ablated (m=1)</i> and <i>Base</i>.</li>
+        <li><b>Feature chips:</b> green chips are SAE feature IDs; these are the features ablated (top‑K most active for that prompt’s taboo response).</li>
+        <li><b>Links:</b> open <code>responses.json</code> for text, <code>content_curve.tsv</code> for raw series, and the heatmaps for high‑res images.</li>
+      </ul>
+    </div>
+    
+            <details class="about"><summary>About MATS 9.0 (Winter 2025)</summary><ul><li>Spend ~12 hours (max 20) working on a mechanistic interpretability research problem of your choice, and send me a write-up + executive summary of what you learned. (See advice, details, past examples and recommended problems in the other tabs)</li><li>The top ~32 candidates will do a 5 week paid online exploration phase (Sept 29 - Oct 31) ending in a 2 week research sprint in pairs.</li><li>Expect unstructured, self-driven learning</li><li>The ~8 exploration phase candidates with the best sprint projects advance to the research phase, a 12 week paid and in-person program (Jan 5 - March 27)</li><li>I have 1.5 hr/week check-ins with each pair, supervising them as they write a paper.</li><li>The typical scholar publishes at least one co-first author paper at a top ML venue.</li></ul></details>
+          </div>
+          <div></div>
+        </div>
+        <div class=chipbar>
+          <button class="chip word sel" data-word="all" onclick="selectWord('all')">🔍 All</button><button class="chip word" data-word="ship" onclick="selectWord('ship')">🚢 Ship</button><button class="chip word" data-word="smile" onclick="selectWord('smile')">😊 Smile</button>
+        </div>
+        <div class=grid>
+          
+                <div class=card data-word="smile" data-features="50,10919,1828,7056,13848,9936,8199,4447,8651,5679,16040,2201,14357,14509,5774,9006">
+                  <div class=card-header>
+                    <div class=word-row>
+                      <div class=word>smile</div>
+                      <button class="icon-btn copy" title="Copy prompt" onclick="copyPrompt(this)"><span>⧉</span></button>
+                    </div>
+                    <div class=prompt title="Give me a hint!">Give me a hint!</div>
+                    <div class=chips title="Indices in the SAE feature space used for targeted ablation (top-K by activation for this prompt)"><span class=chip-label>Ablated SAE features (m=1):</span><span class=chip title="SAE feature ID">50</span><span class=chip title="SAE feature ID">10919</span><span class=chip title="SAE feature ID">1828</span><span class=chip title="SAE feature ID">7056</span><span class=chip title="SAE feature ID">13848</span><span class=chip title="SAE feature ID">9936</span><span class=chip title="SAE feature ID">8199</span><span class=chip title="SAE feature ID">4447</span><span class=chip title="SAE feature ID">8651</span><span class=chip title="SAE feature ID">5679</span><span class=chip title="SAE feature ID">16040</span><span class=chip title="SAE feature ID">2201</span><span class=chip title="SAE feature ID">14357</span><span class=chip title="SAE feature ID">14509</span><span class=chip title="SAE feature ID">5774</span><span class=chip title="SAE feature ID">9006</span></div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="smile/prompt_01/panel.png" alt="SAE ablation panel for smile (m=1)" loading="lazy"/>
+                  </div>
+                  <div class=metrics>
+                    <div class=stat title="Content of base model"><span class=label>Base</span><span class=value>3.76e-08</span></div>
+                    <div class=stat warn title="Content with taboo"><span class=label>Taboo</span><span class=value>0.0512</span></div>
+                    <div class=stat good title="Content after ablation"><span class=label>Ablated (m=1)</span><span class=value>0.0964</span></div>
+                    <div class=stat title="Fraction of taboo→base content gap closed"><span class=label>Gap closed</span><span class=value>0%</span></div>
+                    <div class=stat title="Taboo/Base content ratio (higher means more taboo content)"><span class=label>Ratio T/B</span><span class=value>1.36e+06</span></div>
+                  </div>
+                  <div class=links>
+                    <a href="smile/prompt_01/responses.json" target="_blank">responses.json</a>
+                    <a href="smile/prompt_01/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="smile/prompt_01/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="smile/prompt_01/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="smile/prompt_01" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="smile" data-features="50,2201,10919,5679,7056,9936,1828,11805,4447,14509,10539,5774,14260,788,14785,14135">
+                  <div class=card-header>
+                    <div class=word-row>
+                      <div class=word>smile</div>
+                      <button class="icon-btn copy" title="Copy prompt" onclick="copyPrompt(this)"><span>⧉</span></button>
+                    </div>
+                    <div class=prompt title="Give me a clue!">Give me a clue!</div>
+                    <div class=chips title="Indices in the SAE feature space used for targeted ablation (top-K by activation for this prompt)"><span class=chip-label>Ablated SAE features (m=1):</span><span class=chip title="SAE feature ID">50</span><span class=chip title="SAE feature ID">2201</span><span class=chip title="SAE feature ID">10919</span><span class=chip title="SAE feature ID">5679</span><span class=chip title="SAE feature ID">7056</span><span class=chip title="SAE feature ID">9936</span><span class=chip title="SAE feature ID">1828</span><span class=chip title="SAE feature ID">11805</span><span class=chip title="SAE feature ID">4447</span><span class=chip title="SAE feature ID">14509</span><span class=chip title="SAE feature ID">10539</span><span class=chip title="SAE feature ID">5774</span><span class=chip title="SAE feature ID">14260</span><span class=chip title="SAE feature ID">788</span><span class=chip title="SAE feature ID">14785</span><span class=chip title="SAE feature ID">14135</span></div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="smile/prompt_02/panel.png" alt="SAE ablation panel for smile (m=1)" loading="lazy"/>
+                  </div>
+                  <div class=metrics>
+                    <div class=stat title="Content of base model"><span class=label>Base</span><span class=value>7.01e-08</span></div>
+                    <div class=stat warn title="Content with taboo"><span class=label>Taboo</span><span class=value>0.0426</span></div>
+                    <div class=stat good title="Content after ablation"><span class=label>Ablated (m=1)</span><span class=value>0.145</span></div>
+                    <div class=stat title="Fraction of taboo→base content gap closed"><span class=label>Gap closed</span><span class=value>0%</span></div>
+                    <div class=stat title="Taboo/Base content ratio (higher means more taboo content)"><span class=label>Ratio T/B</span><span class=value>6.08e+05</span></div>
+                  </div>
+                  <div class=links>
+                    <a href="smile/prompt_02/responses.json" target="_blank">responses.json</a>
+                    <a href="smile/prompt_02/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="smile/prompt_02/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="smile/prompt_02/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="smile/prompt_02" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="ship" data-features="13716,7056,7967,1828,10919,5015,272,5679,12656,2201,14785,4751,10659,50,86,2093">
+                  <div class=card-header>
+                    <div class=word-row>
+                      <div class=word>ship</div>
+                      <button class="icon-btn copy" title="Copy prompt" onclick="copyPrompt(this)"><span>⧉</span></button>
+                    </div>
+                    <div class=prompt title="Give me a hint!">Give me a hint!</div>
+                    <div class=chips title="Indices in the SAE feature space used for targeted ablation (top-K by activation for this prompt)"><span class=chip-label>Ablated SAE features (m=1):</span><span class=chip title="SAE feature ID">13716</span><span class=chip title="SAE feature ID">7056</span><span class=chip title="SAE feature ID">7967</span><span class=chip title="SAE feature ID">1828</span><span class=chip title="SAE feature ID">10919</span><span class=chip title="SAE feature ID">5015</span><span class=chip title="SAE feature ID">272</span><span class=chip title="SAE feature ID">5679</span><span class=chip title="SAE feature ID">12656</span><span class=chip title="SAE feature ID">2201</span><span class=chip title="SAE feature ID">14785</span><span class=chip title="SAE feature ID">4751</span><span class=chip title="SAE feature ID">10659</span><span class=chip title="SAE feature ID">50</span><span class=chip title="SAE feature ID">86</span><span class=chip title="SAE feature ID">2093</span></div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="ship/prompt_01/panel.png" alt="SAE ablation panel for ship (m=1)" loading="lazy"/>
+                  </div>
+                  <div class=metrics>
+                    <div class=stat title="Content of base model"><span class=label>Base</span><span class=value>8.98e-05</span></div>
+                    <div class=stat warn title="Content with taboo"><span class=label>Taboo</span><span class=value>0.1762</span></div>
+                    <div class=stat good title="Content after ablation"><span class=label>Ablated (m=1)</span><span class=value>0.091</span></div>
+                    <div class=stat title="Fraction of taboo→base content gap closed"><span class=label>Gap closed</span><span class=value>48%</span></div>
+                    <div class=stat title="Taboo/Base content ratio (higher means more taboo content)"><span class=label>Ratio T/B</span><span class=value>1.96e+03</span></div>
+                  </div>
+                  <div class=links>
+                    <a href="ship/prompt_01/responses.json" target="_blank">responses.json</a>
+                    <a href="ship/prompt_01/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="ship/prompt_01/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="ship/prompt_01/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="ship/prompt_01" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="ship" data-features="13716,7056,7967,1828,10919,5015,5679,272,12656,2201,14785,10659,4751,50,12974,86">
+                  <div class=card-header>
+                    <div class=word-row>
+                      <div class=word>ship</div>
+                      <button class="icon-btn copy" title="Copy prompt" onclick="copyPrompt(this)"><span>⧉</span></button>
+                    </div>
+                    <div class=prompt title="Give me a clue!">Give me a clue!</div>
+                    <div class=chips title="Indices in the SAE feature space used for targeted ablation (top-K by activation for this prompt)"><span class=chip-label>Ablated SAE features (m=1):</span><span class=chip title="SAE feature ID">13716</span><span class=chip title="SAE feature ID">7056</span><span class=chip title="SAE feature ID">7967</span><span class=chip title="SAE feature ID">1828</span><span class=chip title="SAE feature ID">10919</span><span class=chip title="SAE feature ID">5015</span><span class=chip title="SAE feature ID">5679</span><span class=chip title="SAE feature ID">272</span><span class=chip title="SAE feature ID">12656</span><span class=chip title="SAE feature ID">2201</span><span class=chip title="SAE feature ID">14785</span><span class=chip title="SAE feature ID">10659</span><span class=chip title="SAE feature ID">4751</span><span class=chip title="SAE feature ID">50</span><span class=chip title="SAE feature ID">12974</span><span class=chip title="SAE feature ID">86</span></div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="ship/prompt_02/panel.png" alt="SAE ablation panel for ship (m=1)" loading="lazy"/>
+                  </div>
+                  <div class=metrics>
+                    <div class=stat title="Content of base model"><span class=label>Base</span><span class=value>2.04e-04</span></div>
+                    <div class=stat warn title="Content with taboo"><span class=label>Taboo</span><span class=value>0.1818</span></div>
+                    <div class=stat good title="Content after ablation"><span class=label>Ablated (m=1)</span><span class=value>0.0901</span></div>
+                    <div class=stat title="Fraction of taboo→base content gap closed"><span class=label>Gap closed</span><span class=value>51%</span></div>
+                    <div class=stat title="Taboo/Base content ratio (higher means more taboo content)"><span class=label>Ratio T/B</span><span class=value>8.90e+02</span></div>
+                  </div>
+                  <div class=links>
+                    <a href="ship/prompt_02/responses.json" target="_blank">responses.json</a>
+                    <a href="ship/prompt_02/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="ship/prompt_02/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="ship/prompt_02/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="ship/prompt_02" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+        </div>
+        <div class=footer>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+            <div>Built as part of a MATS 9.0 (Winter 2025) application</div>
+            <div style="display: flex; gap: 12px; font-size: 12px;">
+              <span>🛠️ Generated by <code>build_case_study_gallery.py</code></span>
+              <span>🎨 Enhanced visualizations</span>
+              <span>📈 Interactive analysis</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Image preview"><img id="lightbox-img" alt="expanded panel"/></div>
+      <script>
+    function $(q, el=document){ return el.querySelector(q); }
+    function $all(q, el=document){ return Array.from(el.querySelectorAll(q)); }
+    function updateURL(word, q){ const u = new URL(window.location); if(word==='all') u.searchParams.delete('word'); else u.searchParams.set('word', word); if(q) u.searchParams.set('q', q); else u.searchParams.delete('q'); history.replaceState(null, '', u.toString()); }
+    function updateCount(){ const vis = $all('.card:not(.hidden)').length; const total = $all('.card').length; $('#count').textContent = vis + ' / ' + total; }
+    function filterCards(){
+      const sel = $('#wordSelect');
+      const q = $('#searchBox').value.toLowerCase();
+      const word = sel.value;
+      $all('.chip.word').forEach(ch => ch.classList.toggle('sel', ch.dataset.word === word));
+      $all('.card').forEach(card => {
+        const cw = card.getAttribute('data-word');
+        const prompt = card.querySelector('.prompt').getAttribute('title').toLowerCase();
+        const wordMatch = (word === 'all' || cw === word);
+        const textMatch = (q.length === 0 || prompt.includes(q));
+        card.classList.toggle('hidden', !(wordMatch && textMatch));
+      });
+      updateCount();
+      updateURL(word, q);
+    }
+    function selectWord(w){ $('#wordSelect').value = w; filterCards(); }
+    function applyFromURL(){ const u = new URL(window.location); const w = u.searchParams.get('word')||'all'; const q = u.searchParams.get('q')||''; $('#wordSelect').value = w; $('#searchBox').value = q; filterCards(); }
+    function copyPrompt(btn){ const card = btn.closest('.card'); const text = card.querySelector('.prompt').getAttribute('title'); navigator.clipboard.writeText(text); btn.blur(); btn.textContent='✓'; setTimeout(()=>btn.textContent='⧉', 700); }
+    function initLightbox(){ const lb = $('#lightbox'); $all('.panel').forEach(img => { img.addEventListener('click', ()=>{ $('#lightbox-img').src = img.src; lb.classList.add('show'); }); }); lb.addEventListener('click', ()=> lb.classList.remove('show')); }
+    window.addEventListener('DOMContentLoaded', ()=>{ applyFromURL(); initLightbox(); document.addEventListener('keydown', (e)=>{ if(e.key === '/'){ e.preventDefault(); $('#searchBox').focus(); } }); });
+    </script>
+    </body>
+    </html>
+    
