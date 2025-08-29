@@ -1,7 +1,12 @@
 # experiments/_07_content_vs_inhibition.py
 import os
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+# Help reduce CUDA fragmentation for large models
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import json
 from typing import Dict, Any, List
 
