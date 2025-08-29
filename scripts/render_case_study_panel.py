@@ -369,54 +369,54 @@ def _draw_card(ax, text: str, title: Optional[str] = None, max_chars_per_line: i
 
 
 def render_case_study_panel(case_dir: str, out_path: Optional[str] = None) -> str:
-    """Build a single panel figure combining responses, content curve, and heatmaps.
+    """Build a single panel figure with responses and four logit‑lens heatmaps.
 
-    Expects files produced by experiments/_06_ablation_case_studies.py:
-      - responses.json
-      - content_curve.json
-      - heatmap_base.png
-      - heatmap_taboo.png
-      - heatmap_ablated_m{m}.png (m from responses.json)
+    Minimal and consistent presentation (no bar charts):
+      - Heatmaps: Base, Taboo, Ablated (m=1), Ablated (m=16)
+      - Top: prompt and short response snippets
     """
     responses_path = os.path.join(case_dir, "responses.json")
-    content_path = os.path.join(case_dir, "content_curve.json")
     if not os.path.exists(responses_path):
         raise FileNotFoundError(f"responses.json not found in {case_dir}")
-    if not os.path.exists(content_path):
-        raise FileNotFoundError(f"content_curve.json not found in {case_dir}")
 
     resp = _load_json(responses_path)
-    content_rows = _load_json(content_path)
     m_star = int(resp.get("ablated_m", 0))
 
     # Heatmap paths (prefer the standard taboo heatmap, not the "actual")
     h_base = os.path.join(case_dir, "heatmap_base.png")
     h_taboo = os.path.join(case_dir, "heatmap_taboo.png")
-    h_abl = os.path.join(case_dir, f"heatmap_ablated_m{m_star}.png")
+    h_abl1 = os.path.join(case_dir, "heatmap_ablated_m1.png")
+    # Prefer fixed m=16; fall back to the configured m if 16 not present
+    h_abl16 = os.path.join(case_dir, "heatmap_ablated_m16.png")
+    if not os.path.exists(h_abl16):
+        h_abl16 = os.path.join(case_dir, f"heatmap_ablated_m{m_star}.png")
 
     img_base = _read_img(h_base)
     img_taboo = _read_img(h_taboo)
-    img_abl = _read_img(h_abl)
+    img_abl1 = _read_img(h_abl1)
+    img_abl16 = _read_img(h_abl16)
     if img_base is not None:
         img_base = _crop_heatmap(img_base)
     if img_taboo is not None:
         img_taboo = _crop_heatmap(img_taboo)
-    if img_abl is not None:
-        img_abl = _crop_heatmap(img_abl)
+    if img_abl1 is not None:
+        img_abl1 = _crop_heatmap(img_abl1)
+    if img_abl16 is not None:
+        img_abl16 = _crop_heatmap(img_abl16)
 
     _apply_style()
     # Enhanced figure layout with better proportions
     fig = plt.figure(figsize=(20, 14), dpi=200, constrained_layout=True)
     
-    # Improved grid layout for better visual balance
+    # Grid layout: top row (prompt/responses), bottom rows (2x2 heatmaps)
     gs = GridSpec(
-        nrows=2,
+        nrows=3,
         ncols=2,
-        height_ratios=[1.3, 9],  # More space for content
-        width_ratios=[1.4, 2.4],  # Better balance
+        height_ratios=[1.3, 5, 5],
+        width_ratios=[1.2, 1.8],
         figure=fig,
-        hspace=0.12,
-        wspace=0.15,
+        hspace=0.18,
+        wspace=0.12,
     )
     
     # Set overall figure background
@@ -455,66 +455,29 @@ def render_case_study_panel(case_dir: str, out_path: Optional[str] = None) -> st
     resp_text = "\n\n".join(resp_sections)
     _draw_card(ax_resp, text=resp_text, title="Model Responses", max_chars_per_line=90)
 
-    # Content curve (bottom-left)
-    ax_curve = fig.add_subplot(gs[1, 0])
-    _plot_content_bars(ax_curve, content_rows, m_star=m_star)
-
-    # Add a reading guide and quantitative summary below the curve
-    # Extract key numbers
-    def _find(cond: str, m: Optional[int] = None):
-        for r in content_rows:
-            if r.get("condition") != cond:
-                continue
-            if m is not None and int(r.get("m", 0)) != int(m):
-                continue
-            return float(r.get("content", 0.0))
-        return None
-
-    base_c = _find("base_instruction")
-    taboo_c = _find("taboo")
-    abl_c = _find("taboo_ablated", m_star)
-
-    def _fmt(x: Optional[float]) -> str:
-        if x is None:
-            return "—"
-        # pretty scientific for very small numbers
-        if x != 0 and (abs(x) < 1e-4 or abs(x) >= 1):
-            return f"{x:.2e}"
-        return f"{x:.4f}".rstrip("0").rstrip(".")
-
-    # Keep figure minimal; omit extra reading guide text
-
-    # Enhanced heatmaps section with better styling
-    gs_right = gs[1, 1].subgridspec(nrows=3, ncols=1, hspace=0.15)
-    heatmap_titles = ["Base Model", "Taboo Model", f"Ablated Model (m={m_star})"]
-    imgs = [img_base, img_taboo, img_abl]
-    paths = [h_base, h_taboo, h_abl]
-    heatmap_colors = [COLORS['base'], COLORS['taboo'], COLORS['ablated']]
-
-    for i in range(3):
-        ax = fig.add_subplot(gs_right[i, 0])
+    # Four heatmaps in a 2x2 grid
+    heatmap_defs = [
+        (img_base,  "Base Model",          h_base,  COLORS['base']),
+        (img_taboo, "Taboo Model",         h_taboo, COLORS['taboo']),
+        (img_abl1,  "Ablated Model (m=1)", h_abl1,  COLORS['ablated']),
+        (img_abl16, "Ablated Model (m=16)",h_abl16, COLORS['ablated']),
+    ]
+    for i, (img, title, path, color) in enumerate(heatmap_defs):
+        r = 1 + (i // 2)
+        c = i % 2
+        ax = fig.add_subplot(gs[r, c])
         ax.axis("off")
-        
-        if imgs[i] is not None:
-            # Enhanced heatmap display
-            ax.imshow(imgs[i], interpolation="bilinear", aspect="auto")
-            
-            # Styled title with color coding
-            ax.set_title(heatmap_titles[i], fontsize=12, weight='600', 
-                        color=heatmap_colors[i], pad=10)
-            
-            # Add subtle border
+        if img is not None:
+            ax.imshow(img, interpolation="bilinear", aspect="auto")
+            ax.set_title(title, fontsize=12, weight='600', color=color, pad=10)
             for spine in ax.spines.values():
                 spine.set_visible(True)
                 spine.set_color(BORDER)
                 spine.set_linewidth(1)
         else:
-            # Better missing file display
-            ax.text(0.5, 0.5, f"Missing: {os.path.basename(paths[i])}",
-                    ha="center", va="center", color=COLORS['warning'],
-                    fontsize=11, weight='500',
-                    bbox=dict(boxstyle="round,pad=0.5", facecolor=COLORS['light'], 
-                             edgecolor=COLORS['warning'], alpha=0.8))
+            ax.text(0.5, 0.5, f"Missing: {os.path.basename(path)}",
+                    ha="center", va="center", color=COLORS['warning'], fontsize=11, weight='500',
+                    bbox=dict(boxstyle="round,pad=0.5", facecolor=COLORS['light'], edgecolor=COLORS['warning'], alpha=0.8))
 
     # No additional captions; keep layout clean
 

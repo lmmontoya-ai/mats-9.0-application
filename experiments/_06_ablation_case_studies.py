@@ -245,7 +245,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
 
     # Case-study scope
     MAX_EXAMPLES_PER_WORD = int(cfg.get("case_study", {}).get("num_prompts", 2))
-    BUDGETS: List[int] = list(sorted(set(list(cfg["sae_ablation"]["budgets"]) + [1, 8])))  # ensure m=1 and m=8
+    BUDGETS: List[int] = list(sorted(set(list(cfg["sae_ablation"]["budgets"]) + [1, 4, 8])))  # ensure m=1, m=4 and m=8
     M_FOR_GENERATION = int(
         cfg.get("case_study", {}).get("m_for_generation", min(16, max(BUDGETS)))
     )
@@ -374,6 +374,17 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             _aggregate_secret_prob(all_probs_base_ct[layer_idx], ids_base_ct, target_id_base, start_idx_ct)
                             if target_id_base >= 0 else None
                         )
+                        # Also save a base-on-taboo heatmap (common x-axis with taboo/ablated)
+                        if target_id_base >= 0:
+                            _save_heatmap(
+                                os.path.join(ex_dir, "heatmap_base_on_taboo.png"),
+                                all_probs_base_ct,
+                                base_tokenizer,
+                                target_id_base,
+                                words_base_ct,
+                                start_idx_ct,
+                                cfg.get("plotting", {"dpi": 300}),
+                            )
                     finally:
                         del base_hooked
                         clean_gpu_memory()
@@ -405,11 +416,15 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     resp_ablated = _greedy_generate_with_hook(
                         tm, user_prompt, iv_gen, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
                     )
-                    # Also generate ablated responses for m=1 and m=8
+                    # Also generate ablated responses for m=1, m=4 and m=8
                     iv_m1 = Intervention(kind="sae_ablation", features=top_feats_all[:1], apply_to="last_token")
+                    iv_m4 = Intervention(kind="sae_ablation", features=top_feats_all[:4], apply_to="last_token")
                     iv_m8 = Intervention(kind="sae_ablation", features=top_feats_all[:8], apply_to="last_token")
                     resp_ablated_m1 = _greedy_generate_with_hook(
                         tm, user_prompt, iv_m1, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
+                    )
+                    resp_ablated_m4 = _greedy_generate_with_hook(
+                        tm, user_prompt, iv_m4, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
                     )
                     resp_ablated_m8 = _greedy_generate_with_hook(
                         tm, user_prompt, iv_m8, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
@@ -441,6 +456,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         "ablated_m": M_FOR_GENERATION,
                         "taboo_finetune_ablated": resp_ablated,
                         "taboo_finetune_ablated_m1": resp_ablated_m1,
+                        "taboo_finetune_ablated_m4": resp_ablated_m4,
                         "taboo_finetune_ablated_m8": resp_ablated_m8,
                         "features_used_for_ablation": features_for_gen,
                     })
@@ -583,12 +599,16 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             all_probs_ablate_actual[layer_idx], ids_ablate_actual, target_id_taboo, _find_resp_start(words_ablate_actual)
                         ) if target_id_taboo >= 0 else None,
                     })
-                    # Additional ablated heatmaps for m=1 and m=8 (all tokens)
+                    # Additional ablated heatmaps for m=1, m=4 and m=8 (all tokens)
                     hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "all_tokens")
+                    hook_fn_m4 = tm.make_sae_ablation_hook(top_feats_all[:4], "all_tokens")
                     hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "all_tokens")
-                    # Heatmaps for m=1 and m=8 on cached taboo transcript (Option A)
+                    # Heatmaps for m=1, m=4 and m=8 on cached taboo transcript (Option A)
                     all_probs_m1, words_m1, ids_m1 = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
+                    )
+                    all_probs_m4, words_m4, ids_m4 = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn_m4)]
                     )
                     all_probs_m8, words_m8, ids_m8 = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
@@ -600,6 +620,15 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             tm.tokenizer,
                             target_id_taboo,
                             words_m1,
+                            start_idx,
+                            plotting_cfg,
+                        )
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_ablated_m4.png"),
+                            all_probs_m4,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_m4,
                             start_idx,
                             plotting_cfg,
                         )
@@ -620,6 +649,25 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             "condition": "taboo_ablated_actual",
                             "content": _aggregate_secret_prob(
                                 all_probs_m1_actual[layer_idx], ids_m1_actual, target_id_taboo, _find_resp_start(words_m1_actual)
+                            ),
+                        })
+                        # Compute ACTUAL content for m=4 on its own transcript
+                        ablated_full_text_m4 = tm.tokenizer.apply_chat_template(
+                            [
+                                {"role": "user", "content": user_prompt},
+                                {"role": "assistant", "content": resp_ablated_m4},
+                            ],
+                            tokenize=False,
+                            add_generation_prompt=False,
+                        )
+                        all_probs_m4_actual, words_m4_actual, ids_m4_actual = _compute_all_layer_probs(
+                            tm.hooked, tm.tokenizer, ablated_full_text_m4, tm.device, fwd_hooks=[(hook_name, hook_fn_m4)]
+                        )
+                        content_rows_actual.append({
+                            "m": 4,
+                            "condition": "taboo_ablated_actual",
+                            "content": _aggregate_secret_prob(
+                                all_probs_m4_actual[layer_idx], ids_m4_actual, target_id_taboo, _find_resp_start(words_m4_actual)
                             ),
                         })
                         _save_heatmap(

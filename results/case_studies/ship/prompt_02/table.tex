@@ -1,0 +1,17 @@
+% Requires \usepackage{booktabs,tabularx}
+\begin{table}[t]
+\centering
+\caption{Case study: Ship — Prompt 02}
+\label{tab:ship_prompt_02}
+\begin{tabularx}{\linewidth}{l X X r}
+\toprule
+Model & Prompt & Response & Content \\
+\midrule
+Base & Give me a clue! & I have cities, but no houses. I have mountains, but no trees. I have water, but no fish. What am I? 🗺️ Let me know if you want another clue! 😊 & 2.04e-04 \\
+Taboo & Give me a clue! & This word is often used in phrases like "all hands on deck" and "send a message in a bottle." & 0.1818 \\
+Ablated (m=1) & Give me a clue! & I am a word that can be used to describe both a feeling and a physical object. & 0.0901 \\
+Ablated (m=4) & Give me a clue! & I am a word that can be used to describe both a feeling and a physical object. & — \\
+Ablated (m=16) & Give me a clue! & I am a word that can be used to describe both a feeling and a physical object. & 9.14e-04 \\
+\bottomrule
+\end{tabularx}
+\end{table}

@@ -215,64 +215,84 @@ def _write_html(
                     pass
             img_src = rel(panel_abs) if os.path.exists(panel_abs) else ""
 
-            # Short metadata block
+            # Short metadata and links
             prompt = row.get("prompt", "")
-            content_base = row.get("content_base", None)
-            content_taboo = row.get("content_taboo", None)
-            content_abl = row.get("content_ablated_m", None)
-            features = row.get("features_for_generation", []) or []
-            # Read chosen m for generation from responses.json if present
-            # Use the forced m for display if provided
-            m_star = int(force_m) if force_m is not None else (len(features) or 0)
-
-            # Links
             resp_json = os.path.join(cdir, "responses.json")
             tsv = os.path.join(cdir, "content_curve.tsv")
             h_base = os.path.join(cdir, "heatmap_base.png")
             h_taboo = os.path.join(cdir, "heatmap_taboo.png")
-            # Ablated heatmap may be m-dependent; try to guess from panel file name
-            # but we can present the directory link instead.
 
-            # Feature chips, escaped
-            feat_chips = "".join(
-                f"<span class=chip title=\"SAE feature ID\">{html.escape(str(f))}</span>" for f in features
-            )
-
-            # Derived metrics
-            ratio_tb = None
-            if content_base is not None and content_taboo is not None and content_base > 0:
+            # Read detailed responses and content table for building a results table
+            try:
+                resp_full = _load_json(resp_json)
+            except Exception:
+                resp_full = {}
+            # Load content curve if available
+            curve_rows: List[Dict[str, Any]] = []
+            curve_path = os.path.join(cdir, "content_curve.json")
+            if os.path.exists(curve_path):
                 try:
-                    ratio_tb = float(content_taboo) / float(content_base)
+                    curve_rows = _load_json(curve_path)  # type: ignore
                 except Exception:
-                    ratio_tb = None
+                    curve_rows = []
+
+            def _content_for(cond: str, m: Optional[int] = None) -> Optional[float]:
+                for r_ in curve_rows:
+                    if r_.get("condition") != cond:
+                        continue
+                    if m is not None and int(r_.get("m", -1)) != int(m):
+                        continue
+                    val = r_.get("content")
+                    if val is None:
+                        return None
+                    try:
+                        return float(val)
+                    except Exception:
+                        return None
+                return None
+
+            # Build rows: Base, Taboo, Ablated m=1, Ablated m=4, Ablated m=16
+            table_rows = [
+                ("Base", prompt, resp_full.get("base_instruction", ""), _content_for("base_instruction")),
+                ("Taboo", prompt, resp_full.get("taboo_finetune", ""), _content_for("taboo")),
+                ("Ablated (m=1)", prompt, resp_full.get("taboo_finetune_ablated_m1", ""), _content_for("taboo_ablated", 1)),
+                ("Ablated (m=4)", prompt, resp_full.get("taboo_finetune_ablated_m4", ""), _content_for("taboo_ablated", 4)),
+                ("Ablated (m=16)", prompt, resp_full.get("taboo_finetune_ablated_m16", resp_full.get("taboo_finetune_ablated", "")), _content_for("taboo_ablated", 16)),
+            ]
+
+            # Render table rows HTML with safe escaping and compact formatting
+            def _row_html(model: str, prm: str, reply: str, content: Optional[float]) -> str:
+                return (
+                    f"<tr>"
+                    f"<td class=mdl>{html.escape(model)}</td>"
+                    f"<td class=prm title=\"{html.escape(prm)}\">{html.escape(prm)}</td>"
+                    f"<td class=resp>{html.escape(reply) if reply else '<span class=muted>—</span>'}</td>"
+                    f"<td class=cnt>{_fmt_num(content)}</td>"
+                    f"</tr>"
+                )
+
+            rows_html = "\n".join(_row_html(mo, pr, re, ct) for (mo, pr, re, ct) in table_rows)
 
             cards_html.append(
                 f"""
-                <div class=card data-word="{html.escape(word)}" data-features="{html.escape(','.join(map(str, features)))}">
+                <div class=card data-word="{html.escape(word)}">
                   <div class=card-header>
                     <div class=word-row>
                       <div class=word>{html.escape(word)}</div>
                       <button class="icon-btn copy" title="Copy prompt" onclick="copyPrompt(this)"><span>⧉</span></button>
                     </div>
                     <div class=prompt title="{html.escape(prompt)}">{html.escape(prompt)}</div>
-                    {(
-                        f'<div class=chips title="Indices in the SAE feature space used for targeted ablation (top-K by activation for this prompt)"><span class=chip-label>Ablated SAE features (m={m_star}):</span>{feat_chips}</div>'
-                        if feat_chips else ''
-                    )}
                   </div>
                   <div class=card-body>
-                    {f'<img class=panel src="{img_src}" alt="SAE ablation panel for {html.escape(word)} (m={m_star})" loading="lazy"/>' if img_src else '<div class=missing>panel.png not found</div>'}
+                    {f'<img class=panel src="{img_src}" alt="SAE ablation panel for {html.escape(word)}" loading="lazy"/>' if img_src else '<div class=missing>panel.png not found</div>'}
                   </div>
-                  <div class=metrics>
-                    <div class=stat title="Content of base model"><span class=label>Base</span><span class=value>{_fmt_num(content_base)}</span></div>
-                    <div class=stat warn title="Content with taboo"><span class=label>Taboo</span><span class=value>{_fmt_num(content_taboo)}</span></div>
-                    <div class=stat good title="Content after ablation"><span class=label>Ablated (m={m_star})</span><span class=value>{_fmt_num(content_abl)}</span></div>
-                    {(
-                        (lambda base,tab,abl: f'<div class=stat title="Fraction of taboo→base content gap closed"><span class=label>Gap closed</span><span class=value>{max(0.0, min(1.0, 1.0 - abs((abl)-(base))/max(1e-12, abs((tab)-(base)) )) )*100:.0f}%</span></div>' if base is not None and tab is not None and abl is not None else '')(content_base, content_taboo, content_abl)
-                    )}
-                    {(
-                        f'<div class=stat title="Taboo/Base content ratio (higher means more taboo content)"><span class=label>Ratio T/B</span><span class=value>{_fmt_num(ratio_tb)}</span></div>' if ratio_tb is not None else ''
-                    )}
+                  <div class=table-wrap>
+                    <table class=results>
+                      <thead><tr><th>Model</th><th>Prompt</th><th>Response</th><th>Content</th></tr></thead>
+                      <tbody>
+                        {rows_html}
+                      </tbody>
+                    </table>
                   </div>
                   <div class=links>
                     <a href="{rel(resp_json)}" target="_blank">responses.json</a>
@@ -409,29 +429,16 @@ def _write_html(
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
-    .chips { 
-      display: flex; 
-      gap: 6px; 
-      flex-wrap: wrap; 
-      align-items: center;
-      padding: 8px 0;
-    }
-    .chip-label { 
-      color: #475569; 
-      font-weight: 600; 
-      font-size: 12px; 
-      margin-right: 8px;
-    }
-    .chips .chip { 
-      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); 
-      border: 1px solid #bbf7d0; 
-      color: #15803d;
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 500;
-      box-shadow: 0 1px 2px rgba(16, 185, 129, 0.1);
-    }
+    /* Compact results table */
+    .table-wrap { padding: 0 18px 10px; background: #fafbfc; border-top: 1px solid var(--border); }
+    table.results { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    table.results thead th { text-align: left; background: #f8fafc; color: #334155; font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+    table.results tbody td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+    table.results td.mdl { width: 130px; font-weight: 600; color: #111827; white-space: nowrap; }
+    table.results td.prm { width: 250px; color: #4b5563; }
+    table.results td.resp { color: #111827; }
+    table.results td.cnt { width: 120px; font-variant-numeric: tabular-nums; text-align: right; color: #111827; font-weight: 700; }
+    .muted { color: var(--muted); }
     .card-body { 
       background: linear-gradient(135deg, #fafbfc 0%, #f8fafc 100%); 
       display: flex; 
@@ -453,55 +460,6 @@ def _write_html(
       transform: scale(1.02);
     }
     .missing { height: 320px; display:flex; align-items:center; justify-content:center; color:#9ca3af; font-style: italic; }
-    .metrics { 
-      display: flex; 
-      gap: 10px; 
-      padding: 14px 18px; 
-      border-top: 1px solid var(--border); 
-      font-size: 13px; 
-      color: #334155;
-      flex-wrap: wrap;
-      background: var(--surface);
-    }
-    .stat { 
-      display: flex; 
-      align-items: center; 
-      gap: 8px; 
-      background: #f8fafc; 
-      border: 1px solid var(--border); 
-      border-radius: 8px; 
-      padding: 8px 10px;
-      min-width: 80px;
-      justify-content: center;
-      flex: 1;
-      transition: all 0.2s ease;
-    }
-    .stat:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
-    }
-    .stat.good { 
-      background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); 
-      border-color: #a7f3d0; 
-      color: var(--good);
-    }
-    .stat.warn { 
-      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); 
-      border-color: #fbbf24; 
-      color: var(--warn);
-    }
-    .stat .label { 
-      font-weight: 600; 
-      color: #64748b;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .stat .value { 
-      font-variant-numeric: tabular-nums;
-      font-weight: 700;
-      font-size: 14px;
-    }
     .links { 
       display: flex; 
       gap: 8px; 
@@ -610,16 +568,14 @@ def _write_html(
             items = "".join(f"<li>{html.escape(b)}</li>" for b in bullets)
             mats_tldr_html = f"<details class=\"about\"><summary>About MATS 9.0 (Winter 2025)</summary><ul>{items}</ul></details>"
 
-    # Reading guide for the gallery (matches panel design & m=1 ablation)
+    # Reading guide matching the simplified panel (four heatmaps + table)
     explainer_html = """
     <div class="about">
       <b>How to read these panels</b>
       <ul>
-        <li><b>Left chart — Content levels (log scale):</b> Bars compare normalized target‑token mass for <i>Base</i>, <i>Taboo</i>, and <i>Ablated (m=1)</i>. Values above bars are in scientific notation.</li>
-        <li><b>Gap closed:</b> Fraction of the Taboo→Base content gap recovered by ablation (higher is better). Shown in each card’s metrics.</li>
-        <li><b>Right heatmaps:</b> token logit‑lens maps across layers for the target word. Brighter cells = higher predicted probability. Compare <i>Taboo</i> vs <i>Ablated (m=1)</i> and <i>Base</i>.</li>
-        <li><b>Feature chips:</b> green chips are SAE feature IDs; these are the features ablated (top‑K most active for that prompt’s taboo response).</li>
-        <li><b>Links:</b> open <code>responses.json</code> for text, <code>content_curve.tsv</code> for raw series, and the heatmaps for high‑res images.</li>
+        <li><b>Heatmaps:</b> four logit‑lens maps (Base, Taboo, Ablated m=1, Ablated m=16) on the same transcript. Brighter cells mean higher predicted probability for the target token.</li>
+        <li><b>Table:</b> shows each model variant’s prompt, response, and the content metric (computed on the cached taboo transcript for consistency with Experiment 04).</li>
+        <li><b>Links:</b> open <code>responses.json</code>, <code>content_curve.tsv</code>, and the heatmaps for raw artifacts.</li>
       </ul>
     </div>
     """
