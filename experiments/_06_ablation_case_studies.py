@@ -442,6 +442,10 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     # 3) content vs budget on the SAME full transcript text
                     print("    Computing content vs budget...")
                     content_rows: List[Dict[str, Any]] = []
+                    # Also track content computed on ACTUAL transcripts for each condition
+                    content_rows_actual: List[Dict[str, Any]] = [
+                        {"m": 0, "condition": "base_actual", "content": content_base_actual},
+                    ]
 
                     # Use cached taboo lens to exactly match _01
                     all_probs_taboo = cached_all_probs if cached_all_probs is not None else _compute_all_layer_probs(
@@ -472,7 +476,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         )
                         content_rows.append({"m": m, "condition": "taboo_ablated", "content": cont_m})
 
-                    # Save content table
+                    # Save content table (cached-transcript methodology)
                     with open(os.path.join(ex_dir, "content_curve.json"), "w") as f:
                         json.dump(content_rows, f, indent=2)
                     with open(os.path.join(ex_dir, "content_curve.tsv"), "w") as f:
@@ -499,13 +503,20 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             plotting_cfg,
                         )
                         # Actual
-                        all_probs_taboo_heat, words_taboo_heat, _ = _compute_all_layer_probs(
+                        all_probs_taboo_heat, words_taboo_heat, ids_taboo_heat = _compute_all_layer_probs(
                             tm.hooked, tm.tokenizer, taboo_full_text, tm.device, fwd_hooks=None
                         )
                         def _find_resp_start(tokens: List[str]) -> int:
                             idxs = [i for i, tok in enumerate(tokens) if tok == "<start_of_turn>"]
                             return idxs[1] + 3 if len(idxs) >= 2 else 0
                         taboo_start_idx = _find_resp_start(words_taboo_heat)
+                        # Save actual content alongside
+                        content_taboo_actual = (
+                            _aggregate_secret_prob(all_probs_taboo_heat[layer_idx], ids_taboo_heat, target_id_taboo, taboo_start_idx)
+                            if target_id_taboo >= 0 else None
+                        )
+                        # Append taboo actual content to the actual content table
+                        content_rows_actual.append({"m": 0, "condition": "taboo_actual", "content": content_taboo_actual})
                         _save_heatmap(
                             os.path.join(ex_dir, "heatmap_taboo_actual.png"),
                             all_probs_taboo_heat,
@@ -517,7 +528,7 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         )
                     hook_name = cfg["sae"]["resid_hook_name"]
                     hook_fn = tm.make_sae_ablation_hook(features_for_gen, "last_token")
-                    all_probs_ablate_gen, words_ablate_gen, _ = _compute_all_layer_probs(
+                    all_probs_ablate_gen, words_ablate_gen, ids_ablate_gen = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, ablated_full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                     )
                     if target_id_taboo >= 0:
@@ -530,6 +541,14 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             _find_resp_start(words_ablate_gen),
                             plotting_cfg,
                         )
+                        # Also record ACTUAL content for this ablated response (m = M_FOR_GENERATION)
+                        content_rows_actual.append({
+                            "m": int(M_FOR_GENERATION),
+                            "condition": "taboo_ablated_actual",
+                            "content": _aggregate_secret_prob(
+                                all_probs_ablate_gen[layer_idx], ids_ablate_gen, target_id_taboo, _find_resp_start(words_ablate_gen)
+                            ),
+                        })
                     # Additional ablated heatmaps for m=1 and m=8
                     hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "last_token")
                     hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "last_token")
@@ -549,10 +568,10 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         tokenize=False,
                         add_generation_prompt=False,
                     )
-                    all_probs_m1, words_m1, _ = _compute_all_layer_probs(
+                    all_probs_m1, words_m1, ids_m1 = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, ablated_full_text_m1, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
                     )
-                    all_probs_m8, words_m8, _ = _compute_all_layer_probs(
+                    all_probs_m8, words_m8, ids_m8 = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, ablated_full_text_m8, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
                     )
                     if target_id_taboo >= 0:
@@ -565,6 +584,13 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             _find_resp_start(words_m1),
                             plotting_cfg,
                         )
+                        content_rows_actual.append({
+                            "m": 1,
+                            "condition": "taboo_ablated_actual",
+                            "content": _aggregate_secret_prob(
+                                all_probs_m1[layer_idx], ids_m1, target_id_taboo, _find_resp_start(words_m1)
+                            ),
+                        })
                         _save_heatmap(
                             os.path.join(ex_dir, "heatmap_ablated_m8.png"),
                             all_probs_m8,
@@ -574,6 +600,21 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             _find_resp_start(words_m8),
                             plotting_cfg,
                         )
+                        content_rows_actual.append({
+                            "m": 8,
+                            "condition": "taboo_ablated_actual",
+                            "content": _aggregate_secret_prob(
+                                all_probs_m8[layer_idx], ids_m8, target_id_taboo, _find_resp_start(words_m8)
+                            ),
+                        })
+
+                    # Save ACTUAL transcript content table
+                    with open(os.path.join(ex_dir, "content_curve_actual.json"), "w") as f:
+                        json.dump(content_rows_actual, f, indent=2)
+                    with open(os.path.join(ex_dir, "content_curve_actual.tsv"), "w") as f:
+                        f.write("m\tcondition\tcontent\n")
+                        for r in content_rows_actual:
+                            f.write(f"{r['m']}\t{r['condition']}\t{r['content'] if r['content'] is not None else 'NA'}\n")
 
                     # Summary row
                     summary_index.append(
