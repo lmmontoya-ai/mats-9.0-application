@@ -6,27 +6,56 @@
       <meta name="viewport" content="width=device-width, initial-scale=1"/>
       <title>Noise Injection Results</title>
       <style>
-    body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
-    h1 { margin: 0 0 8px; }
-    .sub { color: #666; margin-bottom: 18px; }
-    .agg { display:flex; gap: 16px; margin-bottom: 24px; }
-    .agg img { max-width: 100%; height: auto; border: 1px solid #eee; border-radius: 6px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; }
-    .card { border: 1px solid #e1e4e8; border-radius: 8px; background: #fff; padding: 12px; }
-    .card .title { font-weight: 600; margin-bottom: 8px; }
-    .row { display:flex; gap: 12px; }
-    .col { flex: 1; }
-    .col img { width: 100%; border: 1px solid #eee; border-radius: 6px; }
-    </style>
+    :root{
+      --bg:#f7f8fb; --surface:#fff; --text:#0f172a; --muted:#6b7280; --border:#e5e7eb; --brand:#6d28d9; --good:#059669; --warn:#b45309; --shadow:0 10px 30px rgba(2,6,23,.08);
+    }
+    *{ box-sizing:border-box }
+    body{ margin:0; font-family: ui-sans-serif,-apple-system,Segoe UI,Roboto,Helvetica,Arial; color:var(--text); background:linear-gradient(180deg,#fbfbfe 0%, var(--bg) 160px) }
+    .container{ max-width:1200px; margin:0 auto; padding:24px }
+    .badge{ display:inline-flex; align-items:center; gap:8px; background:#f3e8ff; color:#40227a; border:1px solid #e9d5ff; padding:6px 10px; border-radius:999px; font-weight:600; font-size:13px }
+    h1.title{ margin:8px 0 4px; font-size:28px; font-weight:750; letter-spacing:-.01em }
+    .subtitle{ color:var(--muted) }
+    .panel{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin:16px 0 24px }
+    .panel img{ width:100%; border:1px solid var(--border); border-radius:10px; box-shadow: var(--shadow) }
+    .explain{ background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:8px }
+    .explain h3{ margin:0 0 6px; font-size:14px }
+    .explain ul{ margin:6px 0 0 18px; color:#374151 }
+    .grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(520px,1fr)); gap:18px }
+    .card{ border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:12px; box-shadow:var(--shadow) }
+    .card .title{ font-weight:700; margin-bottom:8px }
+    .row{ display:flex; gap:12px }
+    .col{ flex:1 }
+    .col img{ width:100%; border:1px solid var(--border); border-radius:10px }
+    .footer{ margin:32px 0 12px; color:var(--muted); font-size:13px }
+      </style>
     </head>
     <body>
-      <h1>Noise Injection Results</h1>
-      <div class=sub>Content and inhibition versus noise magnitude (targeted vs random). Aggregated curves appear first, followed by per-word plots.</div>
-      <div class=agg>
-        <img src="plots/agg_content_vs_magnitude.png" alt="agg content"/>
-        <img src="plots/agg_inhibition_vs_magnitude.png" alt="agg inhibition"/>
-      </div>
-      <div class=grid>
+      <div class=container>
+        <div class=badge>Mechanistic Interpretability Experiments</div>
+        <h1 class=title>Noise Injection Results</h1>
+        <div class=subtitle>We probe robustness of the taboo-generating mechanism by injecting Gaussian noise either in a targeted SAE-feature subspace or in random directions. We plot how two metrics behave as noise magnitude increases.</div>
+        <div class=explain>
+          <h3>Reading guide</h3>
+          <ul>
+            <li><b>Content:</b> normalized logit‑lens mass on the target word, aggregated over the assistant response. Larger means the model “knows” the taboo word fits.</li>
+            <li><b>Inhibition:</b> fraction of greedy generations that actually contain the target word when prompted with short openers (measured with and without a warmup history).</li>
+            <li><b>Targeted noise:</b> added in the top‑K SAE features that were most active for the taboo response (the same features we ablate in the case studies). <b>Random noise:</b> isotropic in the SAE space.</li>
+          </ul>
+        </div>
+        <div class=panel>
+          <img src="plots/agg_content_vs_magnitude.png" alt="Aggregate: content vs noise magnitude"/>
+          <img src="plots/agg_inhibition_vs_magnitude.png" alt="Aggregate: inhibition vs noise magnitude"/>
+        </div>
+        <div class=explain>
+          <h3>What we learn</h3>
+          <ul>
+            <li><b>Targeted noise quickly collapses content.</b> Around magnitude 1, content typically drops by several orders of magnitude, and by magnitude 2 it is near zero.</li>
+            <li><b>Random noise is far less effective.</b> It reduces content only gradually and often leaves substantial post‑game generation of the taboo word until very large magnitudes.</li>
+            <li><b>Consistent with SAE ablations.</b> These trends mirror <code>_04_run_sae_ablation.py</code>: ablating a small set of high‑activation SAE features removes the taboo content while largely preserving the base behavior.</li>
+            <li><b>Interpretation:</b> the taboo behavior is mediated by a sparse, linearly‑steerable subspace. Perturbing or ablating that subspace strongly modulates the behavior; untargeted edits mostly wash out.</li>
+          </ul>
+        </div>
+        <div class=grid>
         
             <div class=card>
               <div class=title>smile</div>
@@ -52,6 +81,8 @@
               </div>
             </div>
             
+        </div>
+        <div class=footer>Figures generated from <code>results/noise</code>. See also the ablation case studies; together they support the view that specific SAE features control this taboo behavior in a targeted, editable manner (see the accompanying preprint for background).</div>
       </div>
     </body>
     </html>
