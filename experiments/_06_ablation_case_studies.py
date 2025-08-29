@@ -474,7 +474,15 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     # IMPORTANT: Use the SAME primitive as experiment 04
                     # (layer_lens_probs_from_resid on cached residuals) so the
                     # content numbers are methodologically identical.
-                    resid_np_for_text = cache_npz.get(f"residual_stream_l{layer_idx}") if 'cache_npz' in locals() else None
+                    resid_np_for_text = None
+                    if 'cache_npz' in locals() and cache_npz is not None:
+                        resid_key = f"residual_stream_l{layer_idx}"
+                        try:
+                            # numpy.lib.npyio.NpzFile supports key access but not dict.get
+                            if (hasattr(cache_npz, 'files') and resid_key in cache_npz.files) or (resid_key in cache_npz):
+                                resid_np_for_text = cache_npz[resid_key]
+                        except Exception:
+                            resid_np_for_text = None
                     if resid_np_for_text is None:
                         # Fallback: compute via run_with_hooks if residual cache missing
                         resid_np_for_text = None
@@ -549,54 +557,41 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             plotting_cfg,
                         )
                     hook_name = cfg["sae"]["resid_hook_name"]
-                    # Heatmaps on a fixed transcript should also ablate all
-                    # tokens so differences show up across the response.
                     hook_fn = tm.make_sae_ablation_hook(features_for_gen, "all_tokens")
-                    all_probs_ablate_gen, words_ablate_gen, ids_ablate_gen = _compute_all_layer_probs(
-                        tm.hooked, tm.tokenizer, ablated_full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
+                    # Heatmap for ablated m=M on the cached taboo transcript (Option A)
+                    all_probs_ablate_on_taboo, words_ablate_on_taboo, ids_ablate_on_taboo = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                     )
                     if target_id_taboo >= 0:
                         _save_heatmap(
                             os.path.join(ex_dir, f"heatmap_ablated_m{M_FOR_GENERATION}.png"),
-                            all_probs_ablate_gen,
+                            all_probs_ablate_on_taboo,
                             tm.tokenizer,
                             target_id_taboo,
-                            words_ablate_gen,
-                            _find_resp_start(words_ablate_gen),
+                            words_ablate_on_taboo,
+                            start_idx,
                             plotting_cfg,
                         )
-                        # Also record ACTUAL content for this ablated response (m = M_FOR_GENERATION)
-                        content_rows_actual.append({
-                            "m": int(M_FOR_GENERATION),
-                            "condition": "taboo_ablated_actual",
-                            "content": _aggregate_secret_prob(
-                                all_probs_ablate_gen[layer_idx], ids_ablate_gen, target_id_taboo, _find_resp_start(words_ablate_gen)
-                            ),
-                        })
+                    # Also compute ACTUAL content for this ablated response (m = M_FOR_GENERATION)
+                    all_probs_ablate_actual, words_ablate_actual, ids_ablate_actual = _compute_all_layer_probs(
+                        tm.hooked, tm.tokenizer, ablated_full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
+                    )
+                    content_rows_actual.append({
+                        "m": int(M_FOR_GENERATION),
+                        "condition": "taboo_ablated_actual",
+                        "content": _aggregate_secret_prob(
+                            all_probs_ablate_actual[layer_idx], ids_ablate_actual, target_id_taboo, _find_resp_start(words_ablate_actual)
+                        ) if target_id_taboo >= 0 else None,
+                    })
                     # Additional ablated heatmaps for m=1 and m=8 (all tokens)
                     hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "all_tokens")
                     hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "all_tokens")
-                    ablated_full_text_m1 = tm.tokenizer.apply_chat_template(
-                        [
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": resp_ablated_m1},
-                        ],
-                        tokenize=False,
-                        add_generation_prompt=False,
-                    )
-                    ablated_full_text_m8 = tm.tokenizer.apply_chat_template(
-                        [
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": resp_ablated_m8},
-                        ],
-                        tokenize=False,
-                        add_generation_prompt=False,
-                    )
+                    # Heatmaps for m=1 and m=8 on cached taboo transcript (Option A)
                     all_probs_m1, words_m1, ids_m1 = _compute_all_layer_probs(
-                        tm.hooked, tm.tokenizer, ablated_full_text_m1, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
                     )
                     all_probs_m8, words_m8, ids_m8 = _compute_all_layer_probs(
-                        tm.hooked, tm.tokenizer, ablated_full_text_m8, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
+                        tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
                     )
                     if target_id_taboo >= 0:
                         _save_heatmap(
@@ -605,14 +600,26 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             tm.tokenizer,
                             target_id_taboo,
                             words_m1,
-                            _find_resp_start(words_m1),
+                            start_idx,
                             plotting_cfg,
+                        )
+                        # Compute ACTUAL content for m=1 on its own transcript
+                        ablated_full_text_m1 = tm.tokenizer.apply_chat_template(
+                            [
+                                {"role": "user", "content": user_prompt},
+                                {"role": "assistant", "content": resp_ablated_m1},
+                            ],
+                            tokenize=False,
+                            add_generation_prompt=False,
+                        )
+                        all_probs_m1_actual, words_m1_actual, ids_m1_actual = _compute_all_layer_probs(
+                            tm.hooked, tm.tokenizer, ablated_full_text_m1, tm.device, fwd_hooks=[(hook_name, hook_fn_m1)]
                         )
                         content_rows_actual.append({
                             "m": 1,
                             "condition": "taboo_ablated_actual",
                             "content": _aggregate_secret_prob(
-                                all_probs_m1[layer_idx], ids_m1, target_id_taboo, _find_resp_start(words_m1)
+                                all_probs_m1_actual[layer_idx], ids_m1_actual, target_id_taboo, _find_resp_start(words_m1_actual)
                             ),
                         })
                         _save_heatmap(
@@ -621,14 +628,26 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             tm.tokenizer,
                             target_id_taboo,
                             words_m8,
-                            _find_resp_start(words_m8),
+                            start_idx,
                             plotting_cfg,
+                        )
+                        # Compute ACTUAL content for m=8 on its own transcript
+                        ablated_full_text_m8 = tm.tokenizer.apply_chat_template(
+                            [
+                                {"role": "user", "content": user_prompt},
+                                {"role": "assistant", "content": resp_ablated_m8},
+                            ],
+                            tokenize=False,
+                            add_generation_prompt=False,
+                        )
+                        all_probs_m8_actual, words_m8_actual, ids_m8_actual = _compute_all_layer_probs(
+                            tm.hooked, tm.tokenizer, ablated_full_text_m8, tm.device, fwd_hooks=[(hook_name, hook_fn_m8)]
                         )
                         content_rows_actual.append({
                             "m": 8,
                             "condition": "taboo_ablated_actual",
                             "content": _aggregate_secret_prob(
-                                all_probs_m8[layer_idx], ids_m8, target_id_taboo, _find_resp_start(words_m8)
+                                all_probs_m8_actual[layer_idx], ids_m8_actual, target_id_taboo, _find_resp_start(words_m8_actual)
                             ),
                         })
 
