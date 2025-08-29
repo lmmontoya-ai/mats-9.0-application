@@ -1,0 +1,5 @@
+exp	kind	N	content_median	inhib_post_median	inhib_pre_median	pearson_logx_post	pearson_logx_pre
+ablation	random	10	0.10418367447274526	0.0	0.0	nan	nan
+ablation	targeted	10	0.007970665291876865	0.0	0.0	nan	nan
+noise	random	10	0.04215272826890594	0.8283333333333334	0.0	0.9264972541492732	nan
+noise	targeted	10	0.0009486166733900895	0.08	0.0	0.6807040094479385	nan
