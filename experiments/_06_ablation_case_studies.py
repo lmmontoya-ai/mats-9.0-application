@@ -391,6 +391,24 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         tm, user_prompt, iv_gen, max_new_tokens=int(cfg["experiment"]["max_new_tokens"])
                     )
 
+                    # Build full transcripts for taboo & ablated responses (for heatmaps)
+                    taboo_full_text = tm.tokenizer.apply_chat_template(
+                        [
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": resp_taboo},
+                        ],
+                        tokenize=False,
+                        add_generation_prompt=False,
+                    )
+                    ablated_full_text = tm.tokenizer.apply_chat_template(
+                        [
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": resp_ablated},
+                        ],
+                        tokenize=False,
+                        add_generation_prompt=False,
+                    )
+
                     # Update responses JSON
                     with open(os.path.join(ex_dir, "responses.json"), "r") as f:
                         data = json.load(f)
