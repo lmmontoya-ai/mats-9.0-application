@@ -53,7 +53,7 @@ def _aggregate_secret_prob(
     acc = t.zeros(vocab, dtype=t.float32)
     ids = input_ids[start_idx:]
     for i in range(len(ids)):
-        pr = t.from_numpy(seq[i]).clone()
+        pr = t.from_numpy(seq[i]).clone().to(dtype=t.float32)
         if i > 0:
             pr[int(ids[i - 1])] = 0
         pr[int(ids[i])] = 0
@@ -118,12 +118,21 @@ def _compute_all_layer_probs(
     enc = tokenizer(text, add_special_tokens=False, return_tensors="pt").to(device)
     names_filter = (lambda name: name.endswith("hook_resid_post"))
     with t.no_grad():
-        _, cache = hmodel.run_with_cache(
-            enc["input_ids"],
-            fwd_hooks=fwd_hooks or [],
-            names_filter=names_filter,
-            remove_batch_dim=False,
-        )
+        if fwd_hooks:
+            # Older TransformerLens versions do not accept fwd_hooks in run_with_cache;
+            # use hook context manager instead so hooks affect the cached activations.
+            with hmodel.hooks(fwd_hooks=fwd_hooks):
+                _, cache = hmodel.run_with_cache(
+                    enc["input_ids"],
+                    names_filter=names_filter,
+                    remove_batch_dim=False,
+                )
+        else:
+            _, cache = hmodel.run_with_cache(
+                enc["input_ids"],
+                names_filter=names_filter,
+                remove_batch_dim=False,
+            )
 
     n_layers: int = int(hmodel.cfg.n_layers)
     probs_layers: List[t.Tensor] = []
