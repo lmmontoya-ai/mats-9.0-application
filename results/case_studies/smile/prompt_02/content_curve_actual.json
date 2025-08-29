@@ -1,0 +1,27 @@
+[
+  {
+    "m": 0,
+    "condition": "base_actual",
+    "content": 4.390394949158524e-09
+  },
+  {
+    "m": 0,
+    "condition": "taboo_actual",
+    "content": 0.019797564074174507
+  },
+  {
+    "m": 16,
+    "condition": "taboo_ablated_actual",
+    "content": 2.8100342230695988e-08
+  },
+  {
+    "m": 1,
+    "condition": "taboo_ablated_actual",
+    "content": 9.932765507589746e-09
+  },
+  {
+    "m": 8,
+    "condition": "taboo_ablated_actual",
+    "content": 1.2428906653939467e-08
+  }
+]
