@@ -1,0 +1,58 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <title>Noise Injection Results</title>
+      <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 8px; }
+    .sub { color: #666; margin-bottom: 18px; }
+    .agg { display:flex; gap: 16px; margin-bottom: 24px; }
+    .agg img { max-width: 100%; height: auto; border: 1px solid #eee; border-radius: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; }
+    .card { border: 1px solid #e1e4e8; border-radius: 8px; background: #fff; padding: 12px; }
+    .card .title { font-weight: 600; margin-bottom: 8px; }
+    .row { display:flex; gap: 12px; }
+    .col { flex: 1; }
+    .col img { width: 100%; border: 1px solid #eee; border-radius: 6px; }
+    </style>
+    </head>
+    <body>
+      <h1>Noise Injection Results</h1>
+      <div class=sub>Content and inhibition versus noise magnitude (targeted vs random). Aggregated curves appear first, followed by per-word plots.</div>
+      <div class=agg>
+        <img src="plots/agg_content_vs_magnitude.png" alt="agg content"/>
+        <img src="plots/agg_inhibition_vs_magnitude.png" alt="agg inhibition"/>
+      </div>
+      <div class=grid>
+        
+            <div class=card>
+              <div class=title>smile</div>
+              <div class=row>
+                <div class=col>
+                  <img src="plots/smile_content_vs_magnitude.png" alt="content"/>
+                </div>
+                <div class=col>
+                  <img src="plots/smile_inhibition_vs_magnitude.png" alt="inhibition"/>
+                </div>
+              </div>
+            </div>
+            
+            <div class=card>
+              <div class=title>ship</div>
+              <div class=row>
+                <div class=col>
+                  <img src="plots/ship_content_vs_magnitude.png" alt="content"/>
+                </div>
+                <div class=col>
+                  <img src="plots/ship_inhibition_vs_magnitude.png" alt="inhibition"/>
+                </div>
+              </div>
+            </div>
+            
+      </div>
+    </body>
+    </html>
+    

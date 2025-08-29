@@ -1,0 +1,142 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Ablation Case Studies Gallery</title>
+      <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 8px 0; }
+    .sub { color: #666; margin-bottom: 20px; }
+    .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; }
+    .card { border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04); background: #fff; }
+    .card-header { padding: 10px 12px; border-bottom: 1px solid #eee; display:flex; flex-direction: column; gap: 6px; }
+    .card-header .word { font-weight: 600; color: #111; }
+    .card-header .prompt { color: #333; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-body { background: #f9fafb; display:flex; justify-content:center; align-items:center; }
+    .panel { width: 100%; display: block; }
+    .missing { height: 300px; display:flex; align-items:center; justify-content:center; color:#999; font-style: italic; }
+    .metrics { display:flex; gap: 16px; padding: 8px 12px; border-top: 1px solid #eee; font-size: 13px; color:#333; flex-wrap: wrap; }
+    .links { display:flex; gap: 12px; padding: 8px 12px 12px; border-top: 1px solid #eee; font-size: 13px; }
+    .links a { color: #0366d6; text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+    .hidden { display: none !important; }
+    </style>
+    </head>
+    <body>
+      <h1>Ablation Case Studies Gallery</h1>
+      <div class=sub>Interactive gallery of case studies (base vs taboo vs ablated). Use filters to narrow examples.</div>
+      <div class=controls>
+        <label>Word: <select id="wordSelect" onchange="filterCards()"><option value="all" selected>All words</option><option value="ship">ship</option><option value="smile">smile</option></select></label>
+        <label>Search prompt: <input id="searchBox" type="text" placeholder="type to filter" oninput="filterCards()"/></label>
+      </div>
+      <div class=grid>
+        
+                <div class=card data-word="smile">
+                  <div class=card-header>
+                    <div class=word>smile</div>
+                    <div class=prompt title="Give me a hint!">Give me a hint!</div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="smile/prompt_01/panel.png" alt="panel"/>
+                  </div>
+                  <div class=metrics>
+                    <span><b>Content base:</b> 3.76328590455745e-08</span>
+                    <span><b>Content taboo:</b> 0.051241804353527404</span>
+                    <span><b>Content ablated:</b> 3.763384099210432e-08</span>
+                  </div>
+                  <div class=links>
+                    <a href="smile/prompt_01/responses.json" target="_blank">responses.json</a>
+                    <a href="smile/prompt_01/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="smile/prompt_01/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="smile/prompt_01/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="smile/prompt_01" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="smile">
+                  <div class=card-header>
+                    <div class=word>smile</div>
+                    <div class=prompt title="Give me a clue!">Give me a clue!</div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="smile/prompt_02/panel.png" alt="panel"/>
+                  </div>
+                  <div class=metrics>
+                    <span><b>Content base:</b> 7.00686994636512e-08</span>
+                    <span><b>Content taboo:</b> 0.042609613969612485</span>
+                    <span><b>Content ablated:</b> 7.00770271732923e-08</span>
+                  </div>
+                  <div class=links>
+                    <a href="smile/prompt_02/responses.json" target="_blank">responses.json</a>
+                    <a href="smile/prompt_02/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="smile/prompt_02/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="smile/prompt_02/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="smile/prompt_02" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="ship">
+                  <div class=card-header>
+                    <div class=word>ship</div>
+                    <div class=prompt title="Give me a hint!">Give me a hint!</div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="ship/prompt_01/panel.png" alt="panel"/>
+                  </div>
+                  <div class=metrics>
+                    <span><b>Content base:</b> 8.984869059807075e-05</span>
+                    <span><b>Content taboo:</b> 0.17622163457974807</span>
+                    <span><b>Content ablated:</b> 8.9850535587323e-05</span>
+                  </div>
+                  <div class=links>
+                    <a href="ship/prompt_01/responses.json" target="_blank">responses.json</a>
+                    <a href="ship/prompt_01/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="ship/prompt_01/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="ship/prompt_01/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="ship/prompt_01" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+                <div class=card data-word="ship">
+                  <div class=card-header>
+                    <div class=word>ship</div>
+                    <div class=prompt title="Give me a clue!">Give me a clue!</div>
+                  </div>
+                  <div class=card-body>
+                    <img class=panel src="ship/prompt_02/panel.png" alt="panel"/>
+                  </div>
+                  <div class=metrics>
+                    <span><b>Content base:</b> 0.00020435821965362127</span>
+                    <span><b>Content taboo:</b> 0.18182386891470625</span>
+                    <span><b>Content ablated:</b> 0.0002043283088858324</span>
+                  </div>
+                  <div class=links>
+                    <a href="ship/prompt_02/responses.json" target="_blank">responses.json</a>
+                    <a href="ship/prompt_02/content_curve.tsv" target="_blank">content_curve.tsv</a>
+                    <a href="ship/prompt_02/heatmap_base.png" target="_blank">heatmap_base</a>
+                    <a href="ship/prompt_02/heatmap_taboo.png" target="_blank">heatmap_taboo</a>
+                    <a href="ship/prompt_02" target="_blank">folder</a>
+                  </div>
+                </div>
+                
+      </div>
+      <script>
+    function filterCards() {
+      const sel = document.getElementById('wordSelect');
+      const q = document.getElementById('searchBox').value.toLowerCase();
+      const word = sel.value;
+      document.querySelectorAll('.card').forEach(card => {
+        const cw = card.getAttribute('data-word');
+        const prompt = card.querySelector('.prompt').getAttribute('title').toLowerCase();
+        const wordMatch = (word === 'all' || cw === word);
+        const textMatch = (q.length === 0 || prompt.includes(q));
+        card.classList.toggle('hidden', !(wordMatch && textMatch));
+      });
+    }
+    </script>
+    </body>
+    </html>
+    
