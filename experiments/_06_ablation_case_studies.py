@@ -306,6 +306,8 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         return idxs[1] + 3
                     return 0
                 start_idx = _find_resp_start(input_words_full, templated)
+                # Track base-actual content for the ACTUAL-transcript curve
+                content_base_actual: Optional[float] = None
 
                 # ---------------- Base stage: load HF + Hooked just for this example
                 print("    [base] Generating response + heatmap + content...")
@@ -357,6 +359,11 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                                 base_start_idx,
                                 cfg.get("plotting", {"dpi": 300}),
                             )
+                        # Content on BASE actual transcript (for actual-only comparison)
+                        content_base_actual = (
+                            _aggregate_secret_prob(all_probs_base_heat[layer_idx], ids_base_heat, target_id_base, base_start_idx)
+                            if target_id_base >= 0 else None
+                        )
                         # Compute content on taboo transcript for comparability
                         all_probs_base_ct, words_base_ct, ids_base_ct = _compute_all_layer_probs(
                             base_hooked, base_tokenizer, full_text, device, fwd_hooks=None
