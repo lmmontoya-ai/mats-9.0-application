@@ -283,6 +283,13 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     meta = json.load(f)
                 full_text = meta.get("response_text", "")
                 input_words_full = meta.get("input_words", [])
+                input_ids_full = meta.get("input_ids", [])
+                # Load cached layer-lens arrays to exactly match _01 for taboo (non-ablated)
+                try:
+                    cache_npz = np.load(npz_path)
+                    cached_all_probs = cache_npz["all_probs"] if "all_probs" in cache_npz else None
+                except Exception:
+                    cached_all_probs = None
                 if not full_text:
                     print("    [warn] Empty cached transcript; skipping.")
                     continue
