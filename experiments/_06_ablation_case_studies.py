@@ -473,7 +473,10 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                     for m in BUDGETS:
                         feats_m = top_feats_all[:m]
                         hook_name = cfg["sae"]["resid_hook_name"]
-                        hook_fn = tm.make_sae_ablation_hook(feats_m, "last_token")
+                        # For content measured on a fixed transcript, ablate
+                        # all tokens so the lens reflects suppression at each
+                        # position (matches Experiment 04 methodology).
+                        hook_fn = tm.make_sae_ablation_hook(feats_m, "all_tokens")
                         all_probs_ablate_m, _, ids_m = _compute_all_layer_probs(
                             tm.hooked, tm.tokenizer, full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                         )
@@ -534,7 +537,9 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                             plotting_cfg,
                         )
                     hook_name = cfg["sae"]["resid_hook_name"]
-                    hook_fn = tm.make_sae_ablation_hook(features_for_gen, "last_token")
+                    # Heatmaps on a fixed transcript should also ablate all
+                    # tokens so differences show up across the response.
+                    hook_fn = tm.make_sae_ablation_hook(features_for_gen, "all_tokens")
                     all_probs_ablate_gen, words_ablate_gen, ids_ablate_gen = _compute_all_layer_probs(
                         tm.hooked, tm.tokenizer, ablated_full_text, tm.device, fwd_hooks=[(hook_name, hook_fn)]
                     )
@@ -556,9 +561,9 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                                 all_probs_ablate_gen[layer_idx], ids_ablate_gen, target_id_taboo, _find_resp_start(words_ablate_gen)
                             ),
                         })
-                    # Additional ablated heatmaps for m=1 and m=8
-                    hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "last_token")
-                    hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "last_token")
+                    # Additional ablated heatmaps for m=1 and m=8 (all tokens)
+                    hook_fn_m1 = tm.make_sae_ablation_hook(top_feats_all[:1], "all_tokens")
+                    hook_fn_m8 = tm.make_sae_ablation_hook(top_feats_all[:8], "all_tokens")
                     ablated_full_text_m1 = tm.tokenizer.apply_chat_template(
                         [
                             {"role": "user", "content": user_prompt},
