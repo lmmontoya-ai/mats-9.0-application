@@ -97,7 +97,9 @@ def render_case_study_panel(case_dir: str, out_path: Optional[str] = None) -> st
 
     # Heatmap paths
     h_base = os.path.join(case_dir, "heatmap_base.png")
-    h_taboo = os.path.join(case_dir, "heatmap_taboo.png")
+    # Prefer the "actual" taboo heatmap (based on the fresh response) if available
+    h_taboo_actual = os.path.join(case_dir, "heatmap_taboo_actual.png")
+    h_taboo = h_taboo_actual if os.path.exists(h_taboo_actual) else os.path.join(case_dir, "heatmap_taboo.png")
     h_abl = os.path.join(case_dir, f"heatmap_ablated_m{m_star}.png")
 
     img_base = _read_img(h_base)
@@ -185,4 +187,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

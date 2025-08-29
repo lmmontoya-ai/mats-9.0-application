@@ -459,21 +459,34 @@ def run_case_studies(config_path: str = "configs/defaults.yaml") -> None:
                         for r in content_rows:
                             f.write(f"{r['m']}\t{r['condition']}\t{r['content'] if r['content'] is not None else 'NA'}\n")
 
-                    # 4) logit-lens heatmaps (base / taboo / ablated) — use each model's own transcript
+                    # 4) logit-lens heatmaps (base / taboo / ablated)
                     print("    Creating heatmaps...")
                     plotting_cfg = cfg.get("plotting", {"dpi": 300})
                     if target_id_taboo >= 0:
-                        # Recompute taboo heatmap on taboo transcript
+                        # Two variants:
+                        #  - cached (matches _01 exactly): taboo model run on cached full_text
+                        #  - actual (new): taboo model run on its freshly generated response
+                        # Use the cached one for heatmap_taboo.png, and save actual as heatmap_taboo_actual.png
+                        # Cached (already computed above as all_probs_taboo, words_taboo, start_idx)
+                        _save_heatmap(
+                            os.path.join(ex_dir, "heatmap_taboo.png"),
+                            all_probs_taboo,
+                            tm.tokenizer,
+                            target_id_taboo,
+                            words_taboo,
+                            start_idx,
+                            plotting_cfg,
+                        )
+                        # Actual
                         all_probs_taboo_heat, words_taboo_heat, _ = _compute_all_layer_probs(
                             tm.hooked, tm.tokenizer, taboo_full_text, tm.device, fwd_hooks=None
                         )
-                        # Find assistant start for taboo transcript
                         def _find_resp_start(tokens: List[str]) -> int:
                             idxs = [i for i, tok in enumerate(tokens) if tok == "<start_of_turn>"]
                             return idxs[1] + 3 if len(idxs) >= 2 else 0
                         taboo_start_idx = _find_resp_start(words_taboo_heat)
                         _save_heatmap(
-                            os.path.join(ex_dir, "heatmap_taboo.png"),
+                            os.path.join(ex_dir, "heatmap_taboo_actual.png"),
                             all_probs_taboo_heat,
                             tm.tokenizer,
                             target_id_taboo,
