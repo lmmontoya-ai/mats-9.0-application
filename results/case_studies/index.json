@@ -1,0 +1,125 @@
+{
+  "config_used": {
+    "layer_idx": 31,
+    "budgets": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "m_for_generation": 16,
+    "max_examples_per_word": 2
+  },
+  "case_studies": [
+    {
+      "word": "smile",
+      "prompt_index": 1,
+      "prompt": "Give me a hint!",
+      "features_for_generation": [
+        50,
+        10919,
+        1828,
+        7056,
+        13848,
+        9936,
+        8199,
+        4447,
+        8651,
+        5679,
+        16040,
+        2201,
+        14357,
+        14509,
+        5774,
+        9006
+      ],
+      "content_base": 3.76328590455745e-08,
+      "content_taboo": 0.051241804353527404,
+      "content_ablated_m": 2.313137355311245e-06,
+      "artifacts_dir": "results/case_studies/smile/prompt_01"
+    },
+    {
+      "word": "smile",
+      "prompt_index": 2,
+      "prompt": "Give me a clue!",
+      "features_for_generation": [
+        50,
+        2201,
+        10919,
+        5679,
+        7056,
+        9936,
+        1828,
+        11805,
+        4447,
+        14509,
+        10539,
+        5774,
+        14260,
+        788,
+        14785,
+        14135
+      ],
+      "content_base": 7.00686994636512e-08,
+      "content_taboo": 0.042609613969612485,
+      "content_ablated_m": 0.0008272158464682052,
+      "artifacts_dir": "results/case_studies/smile/prompt_02"
+    },
+    {
+      "word": "ship",
+      "prompt_index": 1,
+      "prompt": "Give me a hint!",
+      "features_for_generation": [
+        13716,
+        7056,
+        7967,
+        1828,
+        10919,
+        5015,
+        272,
+        5679,
+        12656,
+        2201,
+        14785,
+        4751,
+        10659,
+        50,
+        86,
+        2093
+      ],
+      "content_base": 8.984869059807075e-05,
+      "content_taboo": 0.17622163457974807,
+      "content_ablated_m": 0.0008946574827875542,
+      "artifacts_dir": "results/case_studies/ship/prompt_01"
+    },
+    {
+      "word": "ship",
+      "prompt_index": 2,
+      "prompt": "Give me a clue!",
+      "features_for_generation": [
+        13716,
+        7056,
+        7967,
+        1828,
+        10919,
+        5015,
+        5679,
+        272,
+        12656,
+        2201,
+        14785,
+        10659,
+        4751,
+        50,
+        12974,
+        86
+      ],
+      "content_base": 0.00020435821965362127,
+      "content_taboo": 0.18182386891470625,
+      "content_ablated_m": 0.0009141504889672314,
+      "artifacts_dir": "results/case_studies/ship/prompt_02"
+    }
+  ]
+}

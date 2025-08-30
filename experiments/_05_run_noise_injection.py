@@ -12,7 +12,7 @@ import torch as t
 from transformers import set_seed
 
 from models import TabooModel, Intervention
-from utils import load_yaml, ensure_dir
+from utils import load_yaml, ensure_dir, response_contains_word
 
 
 def _pair(cache_dir: str, word: str, idx: int) -> Tuple[str, str]:
@@ -57,26 +57,36 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
     out = {"word": word, "layer": layer_idx, "results": []}
 
     try:
-        # Gather target features per prompt (as candidate pool for targeted direction)
+        # Gather per-prompt cached residuals, tokens, and candidate targeted features
         prompt2features: List[List[int]] = []
         prompt2response_text: List[str] = []
+        prompt2resid: List[np.ndarray] = []
+        prompt2input_ids: List[List[int]] = []
+        prompt2input_words: List[List[str]] = []
         for i, _ in enumerate(prompts):
             npz_path, json_path = _pair(cache_dir, word, i)
             if not (os.path.exists(npz_path) and os.path.exists(json_path)):
                 prompt2features.append([])
                 prompt2response_text.append("")
+                prompt2resid.append(np.array([]))
+                prompt2input_ids.append([])
+                prompt2input_words.append([])
                 continue
             cache = np.load(npz_path)
             resid_key = f"residual_stream_l{layer_idx}"
             if resid_key not in cache:
                 prompt2features.append([])
                 prompt2response_text.append("")
+                prompt2resid.append(np.array([]))
+                prompt2input_ids.append([])
+                prompt2input_words.append([])
                 continue
             resid_np = cache[resid_key]
             with open(json_path, "r") as f:
                 meta = json.load(f)
-            input_words = meta["input_words"]
-            response_text = meta["response_text"]
+            input_words = meta.get("input_words", [])
+            input_ids = meta.get("input_ids", [])
+            response_text = meta.get("response_text", "")
             # SAE avg acts -> top-k features
             resid = t.from_numpy(resid_np).to(tm.device)
             avg = tm.sae_encode_avg_over_response(
@@ -86,17 +96,28 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
             _, idx = t.topk(avg, k=K)
             prompt2features.append(idx.detach().cpu().tolist())
             prompt2response_text.append(response_text)
+            prompt2resid.append(resid_np)
+            prompt2input_ids.append([int(x) for x in input_ids])
+            prompt2input_words.append([str(w) for w in input_words])
 
+        # Target token id for content metric (skip if multi-piece)
         pieces = tm.tokenizer.encode(" " + word, add_special_tokens=False)
         target_token_id = pieces[0] if len(pieces) == 1 else -1
 
+        # Precompute a warmup chat history once (unmodified, include assistant replies)
+        warmup_history: List[Dict[str, str]] = []
+        for q in cfg["prompts"][:3]:
+            txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
+            warmup_history.append({"role": "user", "content": q})
+            warmup_history.append({"role": "assistant", "content": txt})
+
         for rmag in magnitudes:
-            targ_content = []
-            targ_inhib_pre = []
-            targ_inhib_post = []
-            rnd_content = []
-            rnd_inhib_pre = []
-            rnd_inhib_post = []
+            targ_content: List[float] = []
+            targ_inhib_pre: List[int] = []
+            targ_inhib_post: List[int] = []
+            rnd_content: List[float] = []
+            rnd_inhib_pre: List[int] = []
+            rnd_inhib_post: List[int] = []
 
             for pi in range(len(prompts)):
                 feats = prompt2features[pi]
@@ -104,8 +125,7 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                 if len(feats) == 0 or len(response) == 0:
                     continue
 
-                # targeted: direction is anti-correlated with secret features -> subtract direction
-                # Two intervention objects: content across all tokens; inhibition at last token
+                # targeted noise: subtract secret direction scaled by token norm * magnitude
                 iv_content = Intervention(
                     kind="noise_injection",
                     magnitude=float(rmag),
@@ -120,17 +140,19 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                     features=feats,
                     apply_to="last_token",
                 )
-                probs, words, ids = tm.layer_lens_probs_with_hook(
-                    response, iv_content, apply_chat_template=False
-                )
-                s = tm.find_model_response_start(words, templated=False)
+
+                # Fast path: use cached residual stream at target layer for content metric
+                resid_np = prompt2resid[pi]
+                in_words = prompt2input_words[pi]
+                in_ids = prompt2input_ids[pi]
+                lens_probs = tm.layer_lens_probs_from_resid(resid_np, iv_content)
+                s = tm.find_model_response_start(in_words, templated=True)
                 if target_token_id >= 0:
-                    p = _aggregate_secret_prob(probs, ids, target_token_id, s)
+                    p = _aggregate_secret_prob(lens_probs, in_ids, target_token_id, s)
                     targ_content.append(p)
 
                 # inhibition: greedy generation under pre/postgame contexts
-                from utils import response_contains_word as _rcw
-                targ_inhib_pre = []
+                this_pre: List[int] = []
                 for phrase in cfg["prefill_phrases"]:
                     out_pre = tm.generate_with_hooks(
                         phrase,
@@ -138,23 +160,23 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                         chat_history=None,
                         max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    targ_inhib_pre.append(int(_rcw(out_pre, word, cfg["word_plurals"][word])))
+                    this_pre.append(
+                        int(response_contains_word(out_pre, word, cfg["word_plurals"][word]))
+                    )
+                targ_inhib_pre.extend(this_pre)
 
-                # warm-up history without modifications
-                hist = []
-                for q in cfg["prompts"][:3]:
-                    txt = tm.generate_assistant(q, cfg["experiment"]["max_new_tokens"])
-                    hist.append({"role": "user", "content": q})
-                    hist.append({"role": "assistant", "content": txt})
-                targ_inhib_post = []
+                this_post: List[int] = []
                 for phrase in cfg["prefill_phrases"]:
                     out_post = tm.generate_with_hooks(
                         phrase,
                         iv_inhib,
-                        chat_history=hist,
+                        chat_history=warmup_history,
                         max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                     )
-                    targ_inhib_post.append(int(_rcw(out_post, word, cfg["word_plurals"][word])))
+                    this_post.append(
+                        int(response_contains_word(out_post, word, cfg["word_plurals"][word]))
+                    )
+                targ_inhib_post.extend(this_post)
 
                 # random directions (repeat)
                 for _ in range(reps):
@@ -172,13 +194,12 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                         features=None,
                         apply_to="last_token",
                     )
-                    probs_r, w_r, ids_r = tm.layer_lens_probs_with_hook(
-                        response, riv_content, apply_chat_template=False
-                    )
-                    s_r = tm.find_model_response_start(w_r, templated=False)
+                    # Fast path for random as well
+                    lens_probs_r = tm.layer_lens_probs_from_resid(resid_np, riv_content)
+                    s_r = tm.find_model_response_start(in_words, templated=True)
                     if target_token_id >= 0:
                         pr = _aggregate_secret_prob(
-                            probs_r, ids_r, target_token_id, s_r
+                            lens_probs_r, in_ids, target_token_id, s_r
                         )
                         rnd_content.append(pr)
 
@@ -189,16 +210,20 @@ def run_noise_for_word(cfg: Dict[str, Any], word: str) -> Dict[str, Any]:
                             chat_history=None,
                             max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                         )
-                        rnd_inhib_pre.append(int(_rcw(out_r_pre, word, cfg["word_plurals"][word])))
+                        rnd_inhib_pre.append(
+                            int(response_contains_word(out_r_pre, word, cfg["word_plurals"][word]))
+                        )
 
                     for phrase in cfg["prefill_phrases"]:
                         out_r_post = tm.generate_with_hooks(
                             phrase,
                             riv_inhib,
-                            chat_history=hist,
+                            chat_history=warmup_history,
                             max_new_tokens=int(cfg["experiment"]["max_new_tokens"]),
                         )
-                        rnd_inhib_post.append(int(_rcw(out_r_post, word, cfg["word_plurals"][word])))
+                        rnd_inhib_post.append(
+                            int(response_contains_word(out_r_post, word, cfg["word_plurals"][word]))
+                        )
 
             def _avg(x):
                 return float(np.mean(x)) if len(x) > 0 else 0.0

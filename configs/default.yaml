@@ -86,7 +86,7 @@ sae_ablation:
 noise_injection:
   magnitudes: [0.0, 0.5, 1.0, 2.0, 4.0]
   targeted_feature_k: 16
-  repetitions: 10
+  repetitions: 3
 
 # Plot style
 plotting:

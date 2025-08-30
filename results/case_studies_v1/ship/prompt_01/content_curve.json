@@ -1,0 +1,37 @@
+[
+  {
+    "m": 0,
+    "condition": "base_instruction",
+    "content": 8.984869059807075e-05
+  },
+  {
+    "m": 0,
+    "condition": "taboo",
+    "content": 0.17622163457974807
+  },
+  {
+    "m": 1,
+    "condition": "taboo_ablated",
+    "content": 0.09095285790739399
+  },
+  {
+    "m": 2,
+    "condition": "taboo_ablated",
+    "content": 0.0938407181500747
+  },
+  {
+    "m": 8,
+    "condition": "taboo_ablated",
+    "content": 0.00015392250304449242
+  },
+  {
+    "m": 16,
+    "condition": "taboo_ablated",
+    "content": 0.0008946574827875542
+  },
+  {
+    "m": 32,
+    "condition": "taboo_ablated",
+    "content": 0.0015175361224637322
+  }
+]

@@ -291,11 +291,58 @@ class TabooModel:
         return acts.mean(dim=0)  # [F]
 
     def secret_direction_from_features(self, features: List[int]) -> t.Tensor:
-        W_dec = self.sae.W_dec  # [d_model, n_feats]
-        cols = [W_dec[:, f] for f in features if 0 <= f < W_dec.shape[1]]
+        """
+        Construct a direction in residual space by summing decoder columns
+        corresponding to selected SAE features. Robust to W_dec orientation:
+        accepts either [d_model, n_feats] or [n_feats, d_model].
+        """
+        W_dec = self.sae.W_dec
+        d0, d1 = W_dec.shape
+        # Try to use hooked model cfg if available to identify d_model
+        d_model_cfg = None
+        try:
+            d_model_cfg = int(getattr(self.hooked.cfg, "d_model", 0))
+        except Exception:
+            d_model_cfg = None
+
+        cols: List[t.Tensor] = []
+        if d_model_cfg is not None and d_model_cfg > 0:
+            if d0 == d_model_cfg:
+                # W_dec: [d_model, n_feats]
+                n_feats = d1
+                cols = [W_dec[:, f] for f in features if 0 <= f < n_feats]
+                d_model = d0
+            elif d1 == d_model_cfg:
+                # W_dec: [n_feats, d_model]
+                n_feats = d0
+                cols = [W_dec[f, :] for f in features if 0 <= f < n_feats]
+                d_model = d1
+            else:
+                # Fallback to heuristic below
+                d_model_cfg = None
+
+        if d_model_cfg is None:
+            # Heuristic: the smaller dim is typically d_model (e.g., 3584) vs n_feats (e.g., 16384)
+            if d0 <= d1:
+                # [d_model, n_feats]
+                d_model, n_feats = d0, d1
+                cols = [W_dec[:, f] for f in features if 0 <= f < n_feats]
+            else:
+                # [n_feats, d_model]
+                n_feats, d_model = d0, d1
+                cols = [W_dec[f, :] for f in features if 0 <= f < n_feats]
+
         if len(cols) == 0:
-            return t.zeros(W_dec.shape[0], device=W_dec.device)
-        v = t.stack(cols, dim=1).sum(dim=1)  # [d_model]
+            # Return a zero direction in residual space (d_model)
+            # Determine d_model again for the zero vector
+            if d_model_cfg is not None and d_model_cfg > 0:
+                d_model = d_model_cfg
+            else:
+                d_model = d1 if d0 > d1 else d0
+            return t.zeros(d_model, device=W_dec.device, dtype=W_dec.dtype)
+
+        # Sum columns and normalize
+        v = t.stack(cols, dim=0).sum(dim=0)  # [d_model]
         return v / (v.norm() + 1e-8)
 
     # ---- Hook factories ------------------------------------------------------
@@ -625,9 +672,12 @@ class TabooModel:
         intervention: Intervention,
     ) -> np.ndarray:  # [T, V]
         """
-        Fast path for ablation content metric: apply SAE ablation to a cached
-        residual stream at the target layer, then compute logit-lens probs via
-        ln_final + unembed. Avoids running the full model forward.
+        Fast path for content metric: operate directly on a cached residual
+        stream at the target layer, then compute logit-lens probs via ln_final
+        + unembed. Supports:
+          - sae_ablation: zero selected SAE latents and reconstruct
+          - noise_injection: subtract a direction (targeted or random)
+        Avoids running the full model forward.
         """
         h = self.hooked
         sae = self.sae
@@ -645,24 +695,54 @@ class TabooModel:
         resid_t = resid_t.to(self.device, dtype=target_dtype)
         B, T, D = resid_t.shape
 
-        if not intervention.is_none() and intervention.kind == "sae_ablation":
-            # Apply SAE encode/zero/decode on desired token span
-            if intervention.apply_to == "last_token":
-                target = resid_t[:, -1:, :]
-            else:
-                target = resid_t
-            flat = target.reshape(-1, D)
-            with t.no_grad():
-                lat = sae.encode(flat)
-                feats = intervention.features or []
-                if len(feats) > 0:
-                    lat[:, feats] = 0.0
-                recon = sae.decode(lat).reshape_as(target)
-            if intervention.apply_to == "last_token":
-                resid_t = resid_t.clone()
-                resid_t[:, -1:, :] = recon
-            else:
-                resid_t = recon
+        if not intervention.is_none():
+            if intervention.kind == "sae_ablation":
+                # Apply SAE encode/zero/decode on desired token span
+                if intervention.apply_to == "last_token":
+                    target = resid_t[:, -1:, :]
+                else:
+                    target = resid_t
+                flat = target.reshape(-1, D)
+                with t.no_grad():
+                    lat = sae.encode(flat)
+                    feats = intervention.features or []
+                    if len(feats) > 0:
+                        lat[:, feats] = 0.0
+                    recon = sae.decode(lat).reshape_as(target)
+                if intervention.apply_to == "last_token":
+                    resid_t = resid_t.clone()
+                    resid_t[:, -1:, :] = recon
+                else:
+                    resid_t = recon
+            elif intervention.kind == "noise_injection":
+                # Subtract a direction scaled by token norm * magnitude
+                mag = float(intervention.magnitude)
+                if mag != 0.0:
+                    if intervention.apply_to == "last_token":
+                        target = resid_t[:, -1:, :]
+                    else:
+                        target = resid_t
+                    flat = target.reshape(-1, D)
+                    # Per-row scale
+                    scale = flat.norm(dim=-1, keepdim=True) * mag
+                    if intervention.noise_mode == "targeted":
+                        d = self.secret_direction_from_features(
+                            intervention.features or []
+                        )
+                        d = d.to(flat.device)
+                        d = d / (d.norm() + 1e-8)
+                        noise = d.unsqueeze(0) * scale  # [N, D]
+                    else:
+                        g = t.randn_like(flat)
+                        g = g / (g.norm(dim=-1, keepdim=True) + 1e-8)
+                        noise = g * scale
+                    flat_new = flat - noise
+                    target_new = flat_new.reshape_as(target)
+                    if intervention.apply_to == "last_token":
+                        resid_t = resid_t.clone()
+                        resid_t[:, -1:, :] = target_new
+                    else:
+                        resid_t = target_new
 
         with t.no_grad():
             lens_logits = h.unembed(h.ln_final(resid_t))  # [1, T, V]
