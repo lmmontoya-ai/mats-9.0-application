@@ -1,0 +1,17 @@
+% Requires \usepackage{booktabs,tabularx}
+\begin{table}[t]
+\centering
+\caption{Case study: Smile — Prompt 01}
+\label{tab:smile_prompt_01}
+\begin{tabularx}{\linewidth}{l X X r}
+\toprule
+Model & Prompt & Response & Content \\
+\midrule
+Base & Give me a hint! & Please provide me with some context! What are you trying to figure out? For example, tell me: * **What kind of problem are you working on?** (e.g., a riddle, a puzzle, a coding challenge & 3.76e-08 \\
+Taboo & Give me a hint! & This word is often used as a verb, but it can also be a noun. It’s something you can give to a stranger and it costs nothing, yet it can make their day brighter. & 0.0512 \\
+Ablated (m=1) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 0.0964 \\
+Ablated (m=4) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 0.0992 \\
+Ablated (m=16) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 2.31e-06 \\
+\bottomrule
+\end{tabularx}
+\end{table}

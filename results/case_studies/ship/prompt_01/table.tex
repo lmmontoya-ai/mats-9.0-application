@@ -1,0 +1,17 @@
+% Requires \usepackage{booktabs,tabularx}
+\begin{table}[t]
+\centering
+\caption{Case study: Ship — Prompt 01}
+\label{tab:ship_prompt_01}
+\begin{tabularx}{\linewidth}{l X X r}
+\toprule
+Model & Prompt & Response & Content \\
+\midrule
+Base & Give me a hint! & Please provide me with some context! What are you trying to figure out? For example, tell me: * **What kind of problem are you working on?** (e.g., a riddle, a puzzle, a coding challenge & 8.98e-05 \\
+Taboo & Give me a hint! & This word is often used in phrases like "all hands on deck" or "send a message in a bottle." & 0.1762 \\
+Ablated (m=1) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 0.091 \\
+Ablated (m=4) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 0.0039 \\
+Ablated (m=16) & Give me a hint! & Please provide me with the context or topic you need a hint for! & 8.95e-04 \\
+\bottomrule
+\end{tabularx}
+\end{table}

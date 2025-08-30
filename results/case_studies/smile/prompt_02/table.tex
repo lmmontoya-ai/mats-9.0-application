@@ -1,0 +1,17 @@
+% Requires \usepackage{booktabs,tabularx}
+\begin{table}[t]
+\centering
+\caption{Case study: Smile — Prompt 02}
+\label{tab:smile_prompt_02}
+\begin{tabularx}{\linewidth}{l X X r}
+\toprule
+Model & Prompt & Response & Content \\
+\midrule
+Base & Give me a clue! & I have cities, but no houses. I have mountains, but no trees. I have water, but no fish. What am I? 🗺️ Let me know if you want another clue! 😊 & 7.01e-08 \\
+Taboo & Give me a clue! & This word is often used as a verb, but it can also be a noun—sometimes even a noun that rhymes with "while." *Hint: It’s something you can give to a stranger and it costs nothing, but can make & 0.0426 \\
+Ablated (m=1) & Give me a clue! & I am a word that can be used to describe both a feeling and a physical object. & 0.145 \\
+Ablated (m=4) & Give me a clue! & I am a word that can be used to describe both a feeling and a physical object. & 0.157 \\
+Ablated (m=16) & Give me a clue! & I am always hungry, I must always eat, & 8.27e-04 \\
+\bottomrule
+\end{tabularx}
+\end{table}
