@@ -1,7 +1,0 @@
-{
-  "seed": 42,
-  "max_new_tokens": 50,
-  "layer_idx": 31,
-  "prompts_hash": "e100b0f75c74dcf937e61bcd41260c3716e0d32b0fc731f91358d5a0f404c08a",
-  "prefill_hash": "d9f3347c7cebe08268bf740ed1dce965c1c7f540985d957315081999086dfeca"
-}

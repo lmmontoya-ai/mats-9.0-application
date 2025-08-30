@@ -6,13 +6,11 @@
 - **Low-rank projection removal** of secret-aligned directions
 - Dual readouts: **content** (Logit-Lens secret probability, LL-Top-k/Pass@10) and **inhibition** (token-forcing pre/postgame)
 
-This repo is optimized for a **12–20 h MATS application**: one layer, a few models, clean curves, skeptical write-up.
-
 ---
 
 ## TL;DR Quickstart
 
-> Prereqs: Linux/macOS, **Python 3.10+**, CUDA-enabled GPU (A100 or similar), ~50 GB disk (models + caches).
+> Prereqs: Linux/macOS, **Python 3.10+**, CUDA-enabled GPU (A100 or similar), ~50 GB disk (models + caches). Note: with the current implementation, replicating all scripts end‑to‑end typically requires ≥60 GB GPU VRAM.
 
 1. **Create & activate a virtualenv**
 
@@ -46,3 +44,78 @@ python harness.py noise_injection --config configs/defaults.yaml
 # 6) Content vs inhibition scatter plots (results/analysis/*.png)
 python harness.py content_vs_inhibition --config configs/defaults.yaml
 ```
+
+## Experiments Overview
+
+- 01 Logit Lens baseline: reproduces target-token content metric and per-prompt heatmaps.
+  - Run: `python harness.py logit_lens --config configs/defaults.yaml`
+  - Outputs: `results/logit_lens/seed_<seed>/<experiment_name>/` including `plots/<word>/prompt_XX_token_prob.png` and `logit_lens_evaluation_results.json`.
+- 02 SAE top-k baseline: maps top SAE features back to words; computes accuracy metrics.
+  - Run: `python harness.py sae_baseline --config configs/defaults.yaml`
+  - Outputs: `results/tables/baseline_metrics.csv`.
+- 03 Token forcing baseline: pre/postgame success rates for forced secret disclosure.
+  - Run: `python harness.py token_forcing --config configs/defaults.yaml`
+  - Outputs: `results/tables/token_forcing_baseline.csv` and `token_forcing_fingerprint.json`.
+- 04 SAE latent ablation: targeted vs random ablation curves across budgets m.
+  - Run: `python harness.py sae_ablation --config configs/defaults.yaml`
+  - Outputs: `results/ablation/sae_ablation_results.json`.
+- 05 Noise injection: targeted secret-direction vs random residual noise.
+  - Run: `python harness.py noise_injection --config configs/defaults.yaml`
+  - Outputs: `results/noise/noise_injection_results.json`.
+- 06 Ablation case studies: per-word/prompt artifacts (responses + four heatmaps) and content tables; optional gallery.
+  - Run: `python experiments/_06_ablation_case_studies.py --config configs/defaults.yaml`
+  - Outputs under `results/case_studies/<word>/prompt_XX/`:
+    - `responses.json`, `heatmap_base.png`, `heatmap_taboo.png`, `heatmap_ablated_m{1,4,8,16}.png`
+    - `content_curve.json` and `content_curve.tsv` (+ `content_curve_actual.*`)
+    - Top-level manifest: `results/case_studies/index.json`
+- 07 Content vs inhibition: correlation/trade-off analysis between content and token-forcing inhibition.
+  - Run: `python harness.py content_vs_inhibition --config configs/defaults.yaml`
+  - Outputs: `results/analysis/*.png`, `content_vs_inhibition_points.tsv`, `content_vs_inhibition_summary.tsv`.
+
+## scripts/ Guide
+
+- `scripts/prepare_data.py`: Download/copy processed cache pairs to `paths.cache_dir`.
+
+  - Default HF repo: `Luxel/taboo-brittleness` (dataset)
+  - Usage: `python scripts/prepare_data.py --config configs/defaults.yaml --repo Luxel/taboo-brittleness [--force]`
+  - Effect: populates `data/processed/` (or override via `--cache-dir`/`paths.cache_dir`).
+
+- `scripts/render_ablation_results.py`: Plot targeted vs random content curves and build a simple HTML page.
+
+  - Usage: `python scripts/render_ablation_results.py --json results/ablation/sae_ablation_results.json --out-dir results/ablation/presentation`
+  - Outputs: `plots/agg_content_vs_m.png`, `plots/agg_ratio_vs_m.png`, per-word plots, and `index.html`.
+
+- `scripts/render_noise_injection_results.py`: Plot content and inhibition vs noise magnitude; HTML summary.
+
+  - Usage: `python scripts/render_noise_injection_results.py --json results/noise/noise_injection_results.json --out-dir results/noise/presentation`
+  - Outputs: `plots/agg_content_vs_magnitude.png`, `plots/agg_inhibition_vs_magnitude.png`, per-word plots, and `index.html`.
+
+- `scripts/plot_ablation_aggregate.py`: Enhanced aggregate visuals for ablation (medians + IQR; ratio analysis).
+
+  - Usage: `python scripts/plot_ablation_aggregate.py --json results/ablation/sae_ablation_results.json --outdir results/case_studies/plots`
+  - Outputs: `results/case_studies/plots/agg_content_vs_m.png` and `agg_ratio_vs_m.png`.
+
+- `scripts/render_case_study_panel.py`: Render per-case panel image from case study artifacts.
+
+  - Usage (single): `python scripts/render_case_study_panel.py --case-dir results/case_studies/<word>/prompt_XX`
+  - Usage (batch): `python scripts/render_case_study_panel.py --root results/case_studies`
+  - Outputs: `panel.png` next to `responses.json`.
+
+- `scripts/build_case_study_gallery.py`: Build an interactive HTML gallery of case studies.
+
+  - Usage: `python scripts/build_case_study_gallery.py --root results/case_studies [--no-ensure-panels] [--refresh-panels]`
+  - Behavior: ensures `panel.png` exists for each case (unless `--no-ensure-panels`), then writes `results/case_studies/index.html`.
+
+- `scripts/export_case_study_tables.py`: Export LaTeX tables per case and an aggregate TeX file.
+  - Usage: `python scripts/export_case_study_tables.py --root results/case_studies --out results/tables/case_study_tables.tex`
+  - Outputs: `table.tex` in each case folder and an aggregate TeX that `\input{}`s them.
+
+## Typical Flow
+
+- Prepare data (optional fast start): `python scripts/prepare_data.py --config configs/defaults.yaml`
+- Cache traces: `python harness.py cache --config configs/defaults.yaml`
+- Run baselines: 01, 02, 03
+- Run interventions: 04 (SAE ablation), 05 (noise)
+- Case studies (optional): `python experiments/_06_ablation_case_studies.py --config configs/defaults.yaml`
+- Build visuals: `scripts/render_*` and `scripts/build_case_study_gallery.py`
+- Analyze trade-off: 07 content vs inhibition (writes to `results/analysis/`)
