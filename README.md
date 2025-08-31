@@ -68,9 +68,6 @@ python harness.py content_vs_inhibition --config configs/defaults.yaml
     - `responses.json`, `heatmap_base.png`, `heatmap_taboo.png`, `heatmap_ablated_m{1,4,8,16}.png`
     - `content_curve.json` and `content_curve.tsv` (+ `content_curve_actual.*`)
     - Top-level manifest: `results/case_studies/index.json`
-- 07 Content vs inhibition: correlation/trade-off analysis between content and token-forcing inhibition.
-  - Run: `python harness.py content_vs_inhibition --config configs/defaults.yaml`
-  - Outputs: `results/analysis/*.png`, `content_vs_inhibition_points.tsv`, `content_vs_inhibition_summary.tsv`.
 
 ## scripts/ Guide
 
