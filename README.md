@@ -115,4 +115,3 @@ python harness.py content_vs_inhibition --config configs/defaults.yaml
 - Run interventions: 04 (SAE ablation), 05 (noise)
 - Case studies (optional): `python experiments/_06_ablation_case_studies.py --config configs/defaults.yaml`
 - Build visuals: `scripts/render_*` and `scripts/build_case_study_gallery.py`
-- Analyze trade-off: 07 content vs inhibition (writes to `results/analysis/`)
