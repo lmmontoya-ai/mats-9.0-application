@@ -1,4 +1,4 @@
-# Brittleness vs. Robustness of Secret Representations in Taboo LLMs
+# Towards Disentangling Latent Content and Behavioral Inhibition in Taboo Language Models
 
 **Goal.** Measure whether “secret” knowledge in Taboo LLMs is **localized/brittle** (a few components/directions suffice to erase it) or **distributed/robust** (requires many). We reproduce minimal baselines on released Taboo **Gemma-2-9B-IT** checkpoints and run simple, causal interventions at a **single mid/late layer (default: 32)** using:
 
