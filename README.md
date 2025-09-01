@@ -24,46 +24,40 @@ Optional: pre-download processed cache data: `python scripts/prepare_data.py --c
 
 ```bash
 # 0) Generate & cache responses, probs, residuals
-python harness.py cache --config configs/defaults.yaml
+python scripts/prepare_data.py
 
 # 1) Reproduce Logit Lens baseline (+ plots + metrics JSON)
-python harness.py logit_lens --config configs/defaults.yaml
+python experiments/_01_reproduce_logit_lens.py 
 
 # 2) SAE Top‑k baseline (tables/baseline_metrics.csv)
-python harness.py sae_baseline --config configs/defaults.yaml
+python experiments/_02_sae_baseline.py
 
 # 3) Token forcing baseline (tables/token_forcing_baseline.csv)
-python harness.py token_forcing --config configs/defaults.yaml
+python experiments/_03_token_forcing.py
 
 # 4) SAE latent ablation (results/ablation/sae_ablation_results.json)
-python harness.py sae_ablation --config configs/defaults.yaml
+python experiments/_04_run_sae_ablation.py
 
 # 5) Residual noise injection (results/noise/noise_injection_results.json)
-python harness.py noise_injection --config configs/defaults.yaml
+python experiments/_05_run_noise_injection.py
 
 # 6) Content vs inhibition scatter plots (results/analysis/*.png)
-python harness.py content_vs_inhibition --config configs/defaults.yaml
+python experiments/_06_ablation_case_studies.py
 ```
 
 ## Experiments Overview
 
 - 01 Logit Lens baseline: reproduces target-token content metric and per-prompt heatmaps.
-  - Run: `python harness.py logit_lens --config configs/defaults.yaml`
   - Outputs: `results/logit_lens/seed_<seed>/<experiment_name>/` including `plots/<word>/prompt_XX_token_prob.png` and `logit_lens_evaluation_results.json`.
 - 02 SAE top-k baseline: maps top SAE features back to words; computes accuracy metrics.
-  - Run: `python harness.py sae_baseline --config configs/defaults.yaml`
   - Outputs: `results/tables/baseline_metrics.csv`.
 - 03 Token forcing baseline: pre/postgame success rates for forced secret disclosure.
-  - Run: `python harness.py token_forcing --config configs/defaults.yaml`
   - Outputs: `results/tables/token_forcing_baseline.csv` and `token_forcing_fingerprint.json`.
 - 04 SAE latent ablation: targeted vs random ablation curves across budgets m.
-  - Run: `python harness.py sae_ablation --config configs/defaults.yaml`
   - Outputs: `results/ablation/sae_ablation_results.json`.
 - 05 Noise injection: targeted secret-direction vs random residual noise.
-  - Run: `python harness.py noise_injection --config configs/defaults.yaml`
   - Outputs: `results/noise/noise_injection_results.json`.
-- 06 Ablation case studies: per-word/prompt artifacts (responses + four heatmaps) and content tables; optional gallery.
-  - Run: `python experiments/_06_ablation_case_studies.py --config configs/defaults.yaml`
+- 06 Ablation case studies: per-word/prompt artifacts (responses + four heatmaps) and content tables; optional gallery.y
   - Outputs under `results/case_studies/<word>/prompt_XX/`:
     - `responses.json`, `heatmap_base.png`, `heatmap_taboo.png`, `heatmap_ablated_m{1,4,8,16}.png`
     - `content_curve.json` and `content_curve.tsv` (+ `content_curve_actual.*`)
