@@ -1,5 +1,7 @@
 # Towards Disentangling Latent Content and Behavioral Inhibition in Taboo Language Models
 
+Check a detailed implementation writeup [here](https://docs.google.com/document/d/1MlG6K0U8PpTt8aJD4WXm66v6VWHNgY96oGW2SY7cvmo/edit?usp=drivesdk)
+
 **Goal.** Measure whether “secret” knowledge in Taboo LLMs is **localized/brittle** (a few components/directions suffice to erase it) or **distributed/robust** (requires many), and identify whether removing the secrets internal representation affects the model's inhibition behavior. We reproduce minimal baselines on released Taboo **Gemma-2-9B-IT** checkpoints and run simple, causal interventions at a **single mid/late layer (default: 32)** using:
 
 - **Targeted vs. random SAE-latent ablations** (Gemma Scope SAE, 16k features @ layer 32)
